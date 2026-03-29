@@ -1,0 +1,61 @@
+name: Publish
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          registry-url: https://registry.npmjs.org
+
+      - name: Check if version already published
+        id: version
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          echo "value=$VERSION" >> $GITHUB_OUTPUT
+          if npm view @sinksight/library-hash@$VERSION version 2>/dev/null | grep -q "$VERSION"; then
+            echo "already_published=true" >> $GITHUB_OUTPUT
+          else
+            echo "already_published=false" >> $GITHUB_OUTPUT
+          fi
+
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          target: wasm32-unknown-unknown
+
+      - uses: jetli/wasm-pack-action@v0.4.0
+
+      - name: Build WASM
+        run: wasm-pack build --target nodejs --out-dir pkg
+
+      - name: Sync version and copy LICENSE into pkg
+        run: |
+          node -e "
+            const fs = require('fs');
+            const pkg = JSON.parse(fs.readFileSync('pkg/package.json', 'utf-8'));
+            pkg.version = '${{ steps.version.outputs.value }}';
+            fs.writeFileSync('pkg/package.json', JSON.stringify(pkg, null, 2) + '\n');
+          "
+          cp LICENSE pkg/
+
+      - name: Install JS dependencies
+        run: npm ci
+
+      - name: JS tests
+        run: npm test
+
+      - name: Publish
+        if: steps.version.outputs.already_published == 'false'
+        run: npm publish --access public
+        working-directory: pkg
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

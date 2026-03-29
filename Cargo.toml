@@ -1,0 +1,31 @@
+[package]
+name = "sinksight-library-hash"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+js-sys = "0.3.92"
+oxc_allocator = "0.110.0"
+oxc_ast = "0.110.0"
+oxc_parser = "0.110.0"
+oxc_semantic = "0.110.0"
+oxc_span = "0.110.0"
+oxc_syntax = "0.110.0"
+serde = { version = "1", features = ["derive"] }
+serde-wasm-bindgen = "0.6"
+sha2 = "0.11"
+wasm-bindgen = "0.2"
+
+[features]
+debug-ir = []
+
+[dev-dependencies]
+wasm-bindgen-test = "0.3"
+
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
