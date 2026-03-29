@@ -4,7 +4,7 @@ use crate::types::{CheckResult, FunctionMatch, LibraryMatch};
 
 pub fn check_script(db_handle: u32, script: &str) -> CheckResult {
     let empty = CheckResult {
-        whole_file: None,
+        whole_file: Vec::new(),
         functions: Vec::new(),
     };
 
@@ -19,12 +19,16 @@ pub fn check_script(db_handle: u32, script: &str) -> CheckResult {
     };
 
     db::with_db(db_handle, |db| {
-        if let Some(m) = db.lookup_file_hash(&analysis.file_hash) {
+        let file_matches = db.lookup_file_hash(&analysis.file_hash);
+        if !file_matches.is_empty() {
             return CheckResult {
-                whole_file: Some(LibraryMatch {
-                    lib: m.lib_name,
-                    version: m.version,
-                }),
+                whole_file: file_matches
+                    .into_iter()
+                    .map(|m| LibraryMatch {
+                        lib: m.lib_name,
+                        version: m.version,
+                    })
+                    .collect(),
                 functions: Vec::new(),
             };
         }
@@ -45,11 +49,17 @@ pub fn check_script(db_handle: u32, script: &str) -> CheckResult {
                 continue;
             }
 
-            if let Some(m) = db.lookup_func_hash(&func_info.hash) {
+            let func_matches = db.lookup_func_hash(&func_info.hash);
+            if !func_matches.is_empty() {
                 matched_ranges.push((func_start, func_end));
                 matched_functions.push(FunctionMatch {
-                    lib: m.lib_name,
-                    version: m.version,
+                    libs: func_matches
+                        .into_iter()
+                        .map(|m| LibraryMatch {
+                            lib: m.lib_name,
+                            version: m.version,
+                        })
+                        .collect(),
                     function_name: func_info.name.clone(),
                     start_line: func_info.position.start_line,
                     start_column: func_info.position.start_column,
@@ -60,7 +70,7 @@ pub fn check_script(db_handle: u32, script: &str) -> CheckResult {
         }
 
         CheckResult {
-            whole_file: None,
+            whole_file: Vec::new(),
             functions: matched_functions,
         }
     })

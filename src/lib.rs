@@ -71,26 +71,24 @@ mod tests {
         let file_result = db::with_db(handle, |db| {
             db.lookup_file_hash(&[0xAA; 32])
         })
-        .flatten();
-        assert!(file_result.is_some());
-        let m = file_result.unwrap();
-        assert_eq!(m.lib_name, "jquery");
-        assert_eq!(m.version, "3.7.1");
+        .unwrap();
+        assert_eq!(file_result.len(), 1);
+        assert_eq!(file_result[0].lib_name, "jquery");
+        assert_eq!(file_result[0].version, "3.7.1");
 
         let func_result = db::with_db(handle, |db| {
             db.lookup_func_hash(&[0xBB; 32])
         })
-        .flatten();
-        assert!(func_result.is_some());
-        let m = func_result.unwrap();
-        assert_eq!(m.lib_name, "lodash");
-        assert_eq!(m.version, "4.17.21");
+        .unwrap();
+        assert_eq!(func_result.len(), 1);
+        assert_eq!(func_result[0].lib_name, "lodash");
+        assert_eq!(func_result[0].version, "4.17.21");
 
         let missing = db::with_db(handle, |db| {
             db.lookup_file_hash(&[0xCC; 32])
         })
-        .flatten();
-        assert!(missing.is_none());
+        .unwrap();
+        assert!(missing.is_empty());
 
         db::free_db(handle);
     }
@@ -111,8 +109,8 @@ mod tests {
         let handle = db::load_db(&db_data).unwrap();
         let result = check::check_script(handle, script);
 
-        assert!(result.whole_file.is_some());
-        let wf = result.whole_file.unwrap();
+        assert!(!result.whole_file.is_empty());
+        let wf = &result.whole_file[0];
         assert_eq!(wf.lib, "testlib");
         assert_eq!(wf.version, "1.0.0");
         assert!(result.functions.is_empty());
@@ -151,10 +149,11 @@ mod tests {
         let handle = db::load_db(&db_data).unwrap();
         let result = check::check_script(handle, script);
 
-        assert!(result.whole_file.is_none());
+        assert!(result.whole_file.is_empty());
         assert_eq!(result.functions.len(), 1);
-        assert_eq!(result.functions[0].lib, "mylib");
-        assert_eq!(result.functions[0].version, "2.0.0");
+        assert_eq!(result.functions[0].libs.len(), 1);
+        assert_eq!(result.functions[0].libs[0].lib, "mylib");
+        assert_eq!(result.functions[0].libs[0].version, "2.0.0");
 
         db::free_db(handle);
     }
@@ -171,7 +170,7 @@ mod tests {
         let handle = db::load_db(&db_data).unwrap();
         let result = check::check_script(handle, "var x = 1;");
 
-        assert!(result.whole_file.is_none());
+        assert!(result.whole_file.is_empty());
         assert!(result.functions.is_empty());
 
         db::free_db(handle);
@@ -214,6 +213,7 @@ mod tests {
 
         assert_eq!(result.functions.len(), 1);
         assert_eq!(result.functions[0].function_name.as_deref(), Some("outer"));
+        assert_eq!(result.functions[0].libs.len(), 1);
 
         db::free_db(handle);
     }
@@ -251,6 +251,78 @@ mod tests {
 
         assert_eq!(result.functions.len(), 1);
         assert_eq!(result.functions[0].function_name.as_deref(), Some("inner"));
+        assert_eq!(result.functions[0].libs.len(), 1);
+
+        db::free_db(handle);
+    }
+
+    #[test]
+    fn test_multi_lib_lookup() {
+        // Two different libs share the same function hash
+        let shared_hash = [0xDD; 32];
+        let db_data = db::build_db(
+            3,
+            &[
+                ("lib-a".to_string(), vec!["1.0.0".to_string()]),
+                ("lib-b".to_string(), vec!["2.0.0".to_string()]),
+            ],
+            vec![],
+            vec![
+                (shared_hash, 0, 0), // lib-a
+                (shared_hash, 1, 0), // lib-b — same hash
+            ],
+        );
+
+        let handle = db::load_db(&db_data).unwrap();
+
+        let results = db::with_db(handle, |db| {
+            db.lookup_func_hash(&shared_hash)
+        })
+        .unwrap();
+        assert_eq!(results.len(), 2);
+        let names: Vec<&str> = results.iter().map(|r| r.lib_name.as_str()).collect();
+        assert!(names.contains(&"lib-a"));
+        assert!(names.contains(&"lib-b"));
+
+        db::free_db(handle);
+    }
+
+    #[test]
+    fn test_multi_lib_check_script_function() {
+        let script = r#"
+            function helper(a, b) {
+                var c = a + b;
+                var d = c * 2;
+                return d;
+            }
+        "#;
+
+        let extract = hash::extract_hashes(script, Some(3)).unwrap();
+        assert!(!extract.functions.is_empty());
+        let func_hash = hash::parse_hash_bytes(&extract.functions[0].hash).unwrap();
+
+        let db_data = db::build_db(
+            3,
+            &[
+                ("lib-x".to_string(), vec!["1.0.0".to_string()]),
+                ("lib-y".to_string(), vec!["3.0.0".to_string()]),
+            ],
+            vec![],
+            vec![
+                (func_hash, 0, 0),
+                (func_hash, 1, 0),
+            ],
+        );
+
+        let handle = db::load_db(&db_data).unwrap();
+        let result = check::check_script(handle, script);
+
+        assert!(result.whole_file.is_empty());
+        assert_eq!(result.functions.len(), 1);
+        assert_eq!(result.functions[0].libs.len(), 2);
+        let libs: Vec<&str> = result.functions[0].libs.iter().map(|l| l.lib.as_str()).collect();
+        assert!(libs.contains(&"lib-x"));
+        assert!(libs.contains(&"lib-y"));
 
         db::free_db(handle);
     }

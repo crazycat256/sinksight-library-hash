@@ -95,26 +95,45 @@ impl BloomFilter {
 }
 
 impl Db {
-    pub fn lookup_file_hash(&self, hash: &[u8; 32]) -> Option<LookupResult> {
-        self.binary_search(&self.file_hashes, hash)
+    pub fn lookup_file_hash(&self, hash: &[u8; 32]) -> Vec<LookupResult> {
+        self.lookup_all(&self.file_hashes, hash)
     }
 
-    pub fn lookup_func_hash(&self, hash: &[u8; 32]) -> Option<LookupResult> {
+    pub fn lookup_func_hash(&self, hash: &[u8; 32]) -> Vec<LookupResult> {
         if !self.bloom.maybe_contains(hash) {
-            return None;
+            return Vec::new();
         }
-        self.binary_search(&self.func_hashes, hash)
+        self.lookup_all(&self.func_hashes, hash)
     }
 
-    fn binary_search(&self, table: &[HashEntry], hash: &[u8; 32]) -> Option<LookupResult> {
-        let idx = table.binary_search_by(|entry| entry.hash.cmp(hash)).ok()?;
-        let entry = &table[idx];
-        let lib = self.libs.get(entry.lib_id as usize)?;
-        let version = lib.versions.get(entry.version_index as usize)?;
-        Some(LookupResult {
-            lib_name: lib.name.clone(),
-            version: version.clone(),
-        })
+    /// Binary-search for `hash`, then scan left/right to collect all entries
+    /// with the same hash (the table is sorted, so duplicates are contiguous).
+    fn lookup_all(&self, table: &[HashEntry], hash: &[u8; 32]) -> Vec<LookupResult> {
+        let idx = match table.binary_search_by(|entry| entry.hash.cmp(hash)) {
+            Ok(i) => i,
+            Err(_) => return Vec::new(),
+        };
+
+        let mut start = idx;
+        while start > 0 && table[start - 1].hash == *hash {
+            start -= 1;
+        }
+
+        let mut results = Vec::new();
+        for entry in &table[start..] {
+            if entry.hash != *hash {
+                break;
+            }
+            if let Some(lib) = self.libs.get(entry.lib_id as usize) {
+                if let Some(version) = lib.versions.get(entry.version_index as usize) {
+                    results.push(LookupResult {
+                        lib_name: lib.name.clone(),
+                        version: version.clone(),
+                    });
+                }
+            }
+        }
+        results
     }
 }
 

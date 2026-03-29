@@ -27,7 +27,8 @@ pub struct FunctionHashInfo {
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CheckResult {
-    pub whole_file: Option<LibraryMatch>,
+    /// All libs whose file hash matches. Empty if no whole-file match.
+    pub whole_file: Vec<LibraryMatch>,
     /// Pruned: parent match => children skipped.
     pub functions: Vec<FunctionMatch>,
 }
@@ -41,8 +42,7 @@ pub struct LibraryMatch {
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FunctionMatch {
-    pub lib: String,
-    pub version: String,
+    pub libs: Vec<LibraryMatch>,
     pub function_name: Option<String>,
     pub start_line: u32,
     pub start_column: u32,
