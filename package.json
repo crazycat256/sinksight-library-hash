@@ -10,6 +10,7 @@
     "sinksight_library_hash.d.ts"
   ],
   "scripts": {
+    "build": "wasm-pack build --target nodejs --out-dir pkg",
     "test": "vitest run",
     "test:fast": "vitest run --exclude tests/hash-golden.test.js"
   },

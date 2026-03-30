@@ -1,4 +1,27 @@
-//! `@sinksight/library-hash` - Rust/WASM implementation of the slh1 hashing algorithm.
+//! `sinksight-library-hash` — AST-based JavaScript library fingerprinting.
+//!
+//! Produces deterministic [`slh1`](https://github.com/crazycat256/sinksight-library-hash)
+//! hashes for JS files and their individual functions. Hashes are stable across
+//! minification, re-formatting, and variable renaming, making them suitable for
+//! identifying known libraries (jQuery, Lodash, React …).
+//!
+//! The crate can be compiled both as a **native Rust library** and as a
+//! **WebAssembly/JavaScript package** (via [`wasm-pack`](https://rustwasm.github.io/wasm-pack/)).
+//! The JS bindings are compiled automatically when the target architecture is `wasm32`.
+//!
+//! # Rust usage
+//!
+//! ```rust
+//! use sinksight_library_hash::{extract_hashes, load_db, check_script, free_db};
+//!
+//! # let source = "function f(a,b){var c=a+b;return c;}";
+//! // Compute hashes for a JS file
+//! let result = extract_hashes(source, None).unwrap();
+//! println!("file hash: {}", result.file_hash);
+//! for f in &result.functions {
+//!     println!("  {} -> {}", f.name.as_deref().unwrap_or("<anon>"), f.hash);
+//! }
+//! ```
 
 mod check;
 mod db;
@@ -6,38 +29,76 @@ mod hash;
 mod types;
 mod visitor;
 
-use wasm_bindgen::prelude::*;
+pub use types::{CheckResult, ExtractResult, FunctionHashInfo, FunctionMatch, LibraryMatch};
 
-#[wasm_bindgen(js_name = extractHashes)]
-pub fn extract_hashes(script: &str, min_statements: Option<u32>) -> Result<JsValue, JsValue> {
-    let result = hash::extract_hashes(script, min_statements)
-        .map_err(|e| JsValue::from_str(&e))?;
-    serde_wasm_bindgen::to_value(&result).map_err(|e| JsValue::from_str(&e.to_string()))
+/// Parse a JavaScript source and return hashes for the whole file and each
+/// eligible function body.
+///
+/// `min_statements` filters out functions with fewer than that many statements
+/// (default: 3).
+pub fn extract_hashes(script: &str, min_statements: Option<u32>) -> Result<ExtractResult, String> {
+    hash::extract_hashes(script, min_statements)
 }
 
-#[wasm_bindgen(js_name = loadDb)]
-pub fn load_db(data: &[u8]) -> Result<u32, JsValue> {
-    db::load_db(data).map_err(|e| JsValue::from_str(&e))
+/// Load a pre-built binary database of known library hashes.
+///
+/// Returns an opaque integer handle that must be passed to [`check_script`] and
+/// eventually released with [`free_db`].
+pub fn load_db(data: &[u8]) -> Result<u32, String> {
+    db::load_db(data)
 }
 
-/// Parse error -> `{ wholeFile: null, functions: [] }`.
-#[wasm_bindgen(js_name = checkScript)]
-pub fn check_script(db_handle: u32, script: &str) -> JsValue {
-    let result = check::check_script(db_handle, script);
-    serde_wasm_bindgen::to_value(&result).unwrap_or(JsValue::NULL)
+/// Match a JavaScript source against a loaded database.
+///
+/// Returns whole-file and per-function matches. On parse error, both lists are
+/// empty. Parent function matches suppress their children (DFS pruning).
+pub fn check_script(db_handle: u32, script: &str) -> CheckResult {
+    check::check_script(db_handle, script)
 }
 
-#[wasm_bindgen(js_name = freeDb)]
+/// Release the memory held by a loaded database handle.
 pub fn free_db(db_handle: u32) {
     db::free_db(db_handle);
 }
 
-#[cfg(feature = "debug-ir")]
-#[wasm_bindgen(js_name = extractIR)]
-pub fn extract_ir(script: &str) -> Result<JsValue, JsValue> {
-    let tokens = hash::extract_ir(script)
-        .map_err(|e| JsValue::from_str(&e))?;
-    serde_wasm_bindgen::to_value(&tokens).map_err(|e| JsValue::from_str(&e.to_string()))
+
+#[cfg(target_arch = "wasm32")]
+mod wasm_api {
+    use wasm_bindgen::prelude::*;
+
+    use crate::{check, db, hash};
+
+    #[wasm_bindgen(js_name = extractHashes)]
+    pub fn extract_hashes(script: &str, min_statements: Option<u32>) -> Result<JsValue, JsValue> {
+        let result = hash::extract_hashes(script, min_statements)
+            .map_err(|e| JsValue::from_str(&e))?;
+        serde_wasm_bindgen::to_value(&result).map_err(|e| JsValue::from_str(&e.to_string()))
+    }
+
+    #[wasm_bindgen(js_name = loadDb)]
+    pub fn load_db(data: &[u8]) -> Result<u32, JsValue> {
+        db::load_db(data).map_err(|e| JsValue::from_str(&e))
+    }
+
+    /// Parse error -> `{ wholeFile: null, functions: [] }`.
+    #[wasm_bindgen(js_name = checkScript)]
+    pub fn check_script(db_handle: u32, script: &str) -> JsValue {
+        let result = check::check_script(db_handle, script);
+        serde_wasm_bindgen::to_value(&result).unwrap_or(JsValue::NULL)
+    }
+
+    #[wasm_bindgen(js_name = freeDb)]
+    pub fn free_db(db_handle: u32) {
+        db::free_db(db_handle);
+    }
+
+    #[cfg(feature = "debug-ir")]
+    #[wasm_bindgen(js_name = extractIR)]
+    pub fn extract_ir(script: &str) -> Result<JsValue, JsValue> {
+        let tokens = hash::extract_ir(script)
+            .map_err(|e| JsValue::from_str(&e))?;
+        serde_wasm_bindgen::to_value(&tokens).map_err(|e| JsValue::from_str(&e.to_string()))
+    }
 }
 
 #[cfg(test)]
