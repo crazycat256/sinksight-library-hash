@@ -321,7 +321,6 @@ fn parse_db(data: &[u8]) -> Result<Db, String> {
     })
 }
 
-#[allow(dead_code)]
 pub fn build_db(
     min_statements: u8,
     libs: &[(String, Vec<String>)],

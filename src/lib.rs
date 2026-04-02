@@ -29,7 +29,10 @@ mod hash;
 mod types;
 mod visitor;
 
-pub use types::{CheckResult, ExtractResult, FunctionHashInfo, FunctionMatch, LibraryMatch};
+pub use types::{
+    BuildDbHashEntry, BuildDbInput, BuildDbLib, CheckResult, ExtractResult, FunctionHashInfo,
+    FunctionMatch, LibraryMatch,
+};
 
 /// Parse a JavaScript source and return hashes for the whole file and each
 /// eligible function body.
@@ -61,12 +64,53 @@ pub fn free_db(db_handle: u32) {
     db::free_db(db_handle);
 }
 
+/// Serialize a database of known library hashes into the binary `.slhdb` format.
+///
+/// The caller provides the library table and pre-computed hash entries (from
+/// [`extract_hashes`] + [`parse_hash_bytes`]). The returned `Vec<u8>` is the
+/// complete binary blob ready to be written to disk or loaded with [`load_db`].
+pub fn build_db(input: BuildDbInput) -> Result<Vec<u8>, String> {
+    let libs: Vec<(String, Vec<String>)> = input
+        .libs
+        .into_iter()
+        .map(|l| (l.name, l.versions))
+        .collect();
+
+    let to_entry = |e: BuildDbHashEntry| -> Result<([u8; 32], u16, u16), String> {
+        let hash: [u8; 32] = e
+            .hash
+            .try_into()
+            .map_err(|v: Vec<u8>| format!("hash must be 32 bytes, got {}", v.len()))?;
+        Ok((hash, e.lib_id, e.version_index))
+    };
+
+    let file_hashes = input
+        .file_hashes
+        .into_iter()
+        .map(to_entry)
+        .collect::<Result<Vec<_>, _>>()?;
+    let func_hashes = input
+        .func_hashes
+        .into_iter()
+        .map(to_entry)
+        .collect::<Result<Vec<_>, _>>()?;
+
+    Ok(db::build_db(input.min_statements, &libs, file_hashes, func_hashes))
+}
+
+/// Parse an `slh1-<hex>` hash string into its raw 32-byte SHA-256 digest.
+///
+/// Returns `None` if the string is malformed or has the wrong prefix.
+pub fn parse_hash_bytes(hash: &str) -> Option<[u8; 32]> {
+    hash::parse_hash_bytes(hash)
+}
+
 
 #[cfg(target_arch = "wasm32")]
 mod wasm_api {
     use wasm_bindgen::prelude::*;
 
-    use crate::{check, db, hash};
+    use crate::{check, db, hash, types::BuildDbInput};
 
     #[wasm_bindgen(js_name = extractHashes)]
     pub fn extract_hashes(script: &str, min_statements: Option<u32>) -> Result<JsValue, JsValue> {
@@ -90,6 +134,32 @@ mod wasm_api {
     #[wasm_bindgen(js_name = freeDb)]
     pub fn free_db(db_handle: u32) {
         db::free_db(db_handle);
+    }
+
+    /// Build a binary `.slhdb` database from pre-computed hashes.
+    ///
+    /// Accepts a JS object matching [`BuildDbInput`] and returns the serialized
+    /// binary blob as `Uint8Array`.
+    #[wasm_bindgen(js_name = buildDb)]
+    pub fn build_db(input: JsValue) -> Result<Vec<u8>, JsValue> {
+        let input: BuildDbInput = serde_wasm_bindgen::from_value(input)
+            .map_err(|e| JsValue::from_str(&format!("invalid buildDb input: {e}")))?;
+        crate::build_db(input).map_err(|e| JsValue::from_str(&e))
+    }
+
+    /// Parse an `slh1-<hex>` hash string into its raw 32-byte digest.
+    ///
+    /// Returns `null` if the string is malformed.
+    #[wasm_bindgen(js_name = parseHashBytes)]
+    pub fn parse_hash_bytes(hash: &str) -> JsValue {
+        match hash::parse_hash_bytes(hash) {
+            Some(bytes) => {
+                let arr = js_sys::Uint8Array::new_with_length(32);
+                arr.copy_from(&bytes);
+                arr.into()
+            }
+            None => JsValue::NULL,
+        }
     }
 
     #[cfg(feature = "debug-ir")]

@@ -63,7 +63,6 @@ fn bytes_to_slh1(bytes: &[u8; 32]) -> String {
     result
 }
 
-#[allow(dead_code)]
 pub fn parse_hash_bytes(hash: &str) -> Option<[u8; 32]> {
     let (prefix, hex) = hash.split_once('-')?;
     if prefix != HASH_PREFIX || hex.len() != 64 {
@@ -78,7 +77,6 @@ pub fn parse_hash_bytes(hash: &str) -> Option<[u8; 32]> {
     Some(bytes)
 }
 
-#[allow(dead_code)]
 fn hex_char(c: u8) -> Option<u8> {
     match c {
         b'0'..=b'9' => Some(c - b'0'),

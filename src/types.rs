@@ -1,4 +1,30 @@
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
+
+/// Input for [`crate::build_db`]. Each entry is a raw 32-byte SHA-256 hash
+/// plus the library / version indices that produced it.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BuildDbInput {
+    pub min_statements: u8,
+    pub libs: Vec<BuildDbLib>,
+    pub file_hashes: Vec<BuildDbHashEntry>,
+    pub func_hashes: Vec<BuildDbHashEntry>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct BuildDbLib {
+    pub name: String,
+    pub versions: Vec<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BuildDbHashEntry {
+    /// Raw 32-byte SHA-256 hash (without the `slh1-` prefix).
+    pub hash: Vec<u8>,
+    pub lib_id: u16,
+    pub version_index: u16,
+}
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
