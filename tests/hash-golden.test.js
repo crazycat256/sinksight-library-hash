@@ -3,7 +3,7 @@
 import { describe, expect, it } from "vitest";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { extractHashes } from "../pkg/sinksight_library_hash.js";
+import { extractHashes } from "../crates/wasm/pkg/sinksight_library_hash.js";
 import { fetchLib, fetchUrl } from "./cdn.js";
 
 const GOLDEN_PATH = join(import.meta.dirname, "golden-hashes.json");

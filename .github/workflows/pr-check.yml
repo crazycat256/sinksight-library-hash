@@ -20,7 +20,7 @@ jobs:
         run: cargo test
 
       - name: Build WASM
-        run: wasm-pack build --target nodejs --out-dir pkg
+        run: wasm-pack build crates/wasm --target nodejs
 
       - uses: actions/setup-node@v4
         with:
@@ -30,3 +30,6 @@ jobs:
 
       - name: JS tests
         run: npm test
+
+      - name: Build napi
+        run: cd crates/napi && npm ci && npm run build

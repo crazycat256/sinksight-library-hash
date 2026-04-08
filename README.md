@@ -1,8 +1,19 @@
 # sinksight-library-hash
 
-AST-based JavaScript library fingerprinting, available as a **Rust crate** and compiled to **WebAssembly** for JavaScript/Node.js.
+AST-based JavaScript library fingerprinting, available as a **Rust crate**, a **WebAssembly** module, and a **native Node.js addon** (NAPI).
 
 Produces deterministic hashes (`slh1`) for JS files and their individual functions, designed to identify known libraries (jQuery, Lodash, React...) even after minification, reformatting, or variable renaming. Used by [SinkSight](https://github.com/crazycat256/sinksight) to filter false positives from DOM XSS analysis.
+
+## Architecture
+
+```
+crates/
+  core/   ← Pure Rust library (rlib) — all logic lives here
+  wasm/   ← WebAssembly bindings (wasm-bindgen)  → npm: @sinksight/library-hash
+  napi/   ← Native Node.js bindings (napi-rs)    → npm: @sinksight/library-hash-native
+```
+
+All three targets expose the same API surface.
 
 ---
 
@@ -58,6 +69,18 @@ free_db(handle);
 
 Release the memory held by a loaded database handle.
 
+#### `parse_hash_bytes(hash) -> Option<[u8; 32]>`
+
+Parse an `slh1-<hex>` hash string into its raw 32-byte digest. Returns `None` if malformed.
+
+#### `list_libs(handle) -> Option<Vec<LibInfo>>`
+
+Return the list of libraries and their versions from a loaded database.
+
+#### `build_db(min_statements, libs, file_hashes, func_hashes) -> Vec<u8>`
+
+Build a binary `.slhdb` database from raw hash data.
+
 ### Types
 
 ```rust
@@ -107,7 +130,9 @@ cargo test
 
 ---
 
-## JavaScript / WebAssembly (npm)
+## JavaScript — WebAssembly (`@sinksight/library-hash`)
+
+The WASM build is optimized for size (`opt-level = "z"`). Best suited for browser extensions and environments where a native addon cannot be used.
 
 ### Install
 
@@ -117,57 +142,73 @@ npm install @sinksight/library-hash
 
 ### API
 
-#### `extractHashes(script, minStatements?)`
+All functions listed in the Rust section are available with camelCase naming:
 
-Parse a JavaScript source and return hashes for the whole file and each eligible function.
+| Rust | JS |
+|------|----|
+| `extract_hashes` | `extractHashes(script, minStatements?)` |
+| `load_db` | `loadDb(data)` |
+| `check_script` | `checkScript(handle, script)` |
+| `free_db` | `freeDb(handle)` |
+| `parse_hash_bytes` | `parseHashBytes(hash)` |
+| `list_libs` | `listLibs(handle)` |
+| `build_db` | `buildDb(minStatements, libs, fileHashes, funcHashes)` |
 
 ```js
-import { extractHashes } from "@sinksight/library-hash";
+import { extractHashes, loadDb, checkScript, freeDb } from "@sinksight/library-hash";
 
 const result = extractHashes(source);
-// {
-//   fileHash: "slh1-a3f2b8c9...",
-//   functions: [
-//     { hash: "slh1-...", name: "ajax", startLine: 10, startColumn: 0, endLine: 25, endColumn: 1, stmtCount: 8 },
-//     ...
-//   ]
-// }
-```
+// { fileHash: "slh1-a3f2b8c9...", functions: [{ hash, name, startLine, ... }] }
 
-#### `loadDb(data) -> handle`
-
-Load a pre-built binary database of known library hashes. Returns an opaque handle.
-
-#### `checkScript(handle, script) -> CheckResult`
-
-Match a script against the loaded database. Returns whole-file and per-function matches.
-
-```js
 const handle = loadDb(dbBytes);
-const result = checkScript(handle, source);
-// {
-//   wholeFile: { lib: "jquery", version: "3.7.1" } | null,
-//   functions: [
-//     { lib: "lodash", version: "4.17.21", functionName: "chunk", startLine: 1, ... },
-//   ]
-// }
+const check = checkScript(handle, source);
+// { wholeFile: [{ lib, version }], functions: [{ libs, functionName, startLine, ... }] }
 freeDb(handle);
 ```
 
-#### `freeDb(handle)`
-
-Release the memory held by a loaded database.
-
-### Building the WASM package from source
+### Building from source
 
 Requires [Rust](https://rustup.rs/) and [wasm-pack](https://rustwasm.github.io/wasm-pack/installer/).
 
 ```bash
 npm run build
-# equivalent to: wasm-pack build --target nodejs --out-dir pkg
+# equivalent to: wasm-pack build crates/wasm --target nodejs
 ```
 
-### Testing
+---
+
+## JavaScript — Native addon (`@sinksight/library-hash-native`)
+
+The NAPI build is optimized for speed (`opt-level = 3`). Used by [sinksight-library-db](https://github.com/crazycat256/sinksight-library-db) for batch hashing. Provides full TypeScript types out of the box.
+
+### Install
+
+```bash
+# From the repo (not published to npm)
+npm install --save file:path/to/sinksight-library-hash/crates/napi
+```
+
+### API
+
+Same functions as the WASM target, with the same signatures. Strongly typed — no `any` returns.
+
+```js
+import { extractHashes, loadDb, checkScript, freeDb } from "@sinksight/library-hash-native";
+// Same usage as the WASM package
+```
+
+### Building from source
+
+Requires [Rust](https://rustup.rs/) and [@napi-rs/cli](https://napi.rs/).
+
+```bash
+cd crates/napi
+npm ci && npm run build
+```
+
+---
+
+## Testing
 
 ```bash
 # Rust unit tests

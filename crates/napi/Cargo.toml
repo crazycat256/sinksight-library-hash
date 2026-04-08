@@ -1,0 +1,20 @@
+[package]
+name = "sinksight-library-hash-napi"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+sinksight-library-hash = { path = "../core" }
+napi = { version = "3", features = ["napi6"] }
+napi-derive = "3"
+
+[features]
+debug-ir = ["sinksight-library-hash/debug-ir"]
+
+[build-dependencies]
+napi-build = "2"
+

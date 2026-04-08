@@ -1,0 +1,21 @@
+[package]
+name = "sinksight-library-hash"
+version = "0.1.0"
+edition = "2021"
+description = "AST-based JavaScript library fingerprinting (slh1 hashes)."
+license = "GPL-3.0"
+
+[lib]
+crate-type = ["rlib"]
+
+[dependencies]
+oxc_allocator = "0.110.0"
+oxc_ast = "0.110.0"
+oxc_parser = "0.110.0"
+oxc_semantic = "0.110.0"
+oxc_span = "0.110.0"
+serde = { version = "1", features = ["derive"] }
+sha2 = "0.11"
+
+[features]
+debug-ir = []

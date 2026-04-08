@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { extractHashes } from "../pkg/sinksight_library_hash.js";
+import { extractHashes } from "../crates/wasm/pkg/sinksight_library_hash.js";
 
 describe("normalization: !0, !1, void 0", () => {
   it("!0 normalizes to true", () => {

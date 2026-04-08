@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { extractHashes } from "../pkg/sinksight_library_hash.js";
+import { extractHashes } from "../crates/wasm/pkg/sinksight_library_hash.js";
 
 describe("whitespace and comment invariance", () => {
   it("extra whitespace does not change the file hash", () => {

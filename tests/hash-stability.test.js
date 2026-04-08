@@ -11,7 +11,7 @@
 
 import { describe, expect, it } from "vitest";
 import { minify } from "terser";
-import { extractHashes } from "../pkg/sinksight_library_hash.js";
+import { extractHashes } from "../crates/wasm/pkg/sinksight_library_hash.js";
 import { fetchLib } from "./cdn.js";
 
 const LIBRARIES = [

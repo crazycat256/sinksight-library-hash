@@ -1,16 +1,9 @@
 {
   "name": "@sinksight/library-hash",
-  "version": "1.0.0",
-  "description": "WASM library for computing and verifying SinkSight Library Hashes (SLH)",
-  "main": "sinksight_library_hash.js",
-  "types": "sinksight_library_hash.d.ts",
-  "files": [
-    "sinksight_library_hash_bg.wasm",
-    "sinksight_library_hash.js",
-    "sinksight_library_hash.d.ts"
-  ],
+  "version": "0.1.0",
+  "description": "AST-based JavaScript library fingerprinting (slh1 hashes)",
   "scripts": {
-    "build": "wasm-pack build --target nodejs --out-dir pkg",
+    "build": "wasm-pack build crates/wasm --target nodejs",
     "test": "vitest run",
     "test:fast": "vitest run --exclude tests/hash-golden.test.js"
   },

@@ -35,17 +35,20 @@ jobs:
       - uses: jetli/wasm-pack-action@v0.4.0
 
       - name: Build WASM
-        run: wasm-pack build --target nodejs --out-dir pkg
+        run: wasm-pack build crates/wasm --target nodejs
 
-      - name: Sync version and copy LICENSE into pkg
+      - name: Sync version, name and LICENSE into pkg
         run: |
           node -e "
             const fs = require('fs');
-            const pkg = JSON.parse(fs.readFileSync('pkg/package.json', 'utf-8'));
+            const root = JSON.parse(fs.readFileSync('package.json', 'utf-8'));
+            const pkg = JSON.parse(fs.readFileSync('crates/wasm/pkg/package.json', 'utf-8'));
+            pkg.name = root.name;
             pkg.version = '${{ steps.version.outputs.value }}';
-            fs.writeFileSync('pkg/package.json', JSON.stringify(pkg, null, 2) + '\n');
+            pkg.repository = root.repository;
+            fs.writeFileSync('crates/wasm/pkg/package.json', JSON.stringify(pkg, null, 2) + '\n');
           "
-          cp LICENSE pkg/
+          cp LICENSE crates/wasm/pkg/
 
       - name: Install JS dependencies
         run: npm ci
@@ -56,6 +59,6 @@ jobs:
       - name: Publish
         if: steps.version.outputs.already_published == 'false'
         run: npm publish --access public
-        working-directory: pkg
+        working-directory: crates/wasm/pkg
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

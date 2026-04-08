@@ -3,7 +3,6 @@ use oxc_ast::ast::*;
 use oxc_parser::{ParseOptions, Parser};
 use oxc_semantic::SemanticBuilder;
 use oxc_span::SourceType;
-use sha2::{Digest, Sha256};
 
 use crate::types::{ExtractResult, FunctionHashInfo};
 use crate::visitor::{ScopeInfo, TokenCollector};
@@ -16,38 +15,6 @@ struct HashContext<'a> {
     scoping: &'a oxc_semantic::Scoping,
     scope_info: &'a ScopeInfo,
     min_stmts: u32,
-}
-
-#[allow(dead_code)]
-fn hash_to_bytes(tokens: &[String]) -> [u8; 32] {
-    let mut hasher = Sha256::new();
-    for (i, token) in tokens.iter().enumerate() {
-        if i > 0 {
-            hasher.update(b",");
-        }
-        let bytes = token.as_bytes();
-        let mut start = 0;
-        for (pos, &b) in bytes.iter().enumerate() {
-            if b == b'\\' || b == b',' {
-                if start < pos {
-                    hasher.update(&bytes[start..pos]);
-                }
-                if b == b'\\' {
-                    hasher.update(b"\\\\");
-                } else {
-                    hasher.update(b"\\,");
-                }
-                start = pos + 1;
-            }
-        }
-        if start < bytes.len() {
-            hasher.update(&bytes[start..]);
-        }
-    }
-    let digest = hasher.finalize();
-    let mut result = [0u8; 32];
-    result.copy_from_slice(&digest);
-    result
 }
 
 const HEX_CHARS: &[u8; 16] = b"0123456789abcdef";
