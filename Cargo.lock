@@ -285,6 +285,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "gloo-utils"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0b5555354113b18c547c1d3a98fbf7fb32a9ff4f6fa112ce823a21641a0ba3aa"
+dependencies = [
+ "js-sys",
+ "serde",
+ "serde_json",
+ "wasm-bindgen",
+ "web-sys",
+]
+
+[[package]]
 name = "hashbrown"
 version = "0.16.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -874,6 +887,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "serde_derive_internals"
+version = "0.29.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "18d26a20a969b9e3fdf2fc2d9f21eda6c40e2de84c9408bb5d3b05d499aae711"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
+]
+
+[[package]]
 name = "serde_json"
 version = "1.0.149"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -934,6 +958,7 @@ dependencies = [
  "serde",
  "serde-wasm-bindgen",
  "sinksight-library-hash",
+ "tsify-next",
  "wasm-bindgen",
  "wasm-bindgen-test",
 ]
@@ -1010,6 +1035,31 @@ checksum = "ebc4ee7f67670e9b64d05fa4253e753e016c6c95ff35b89b7941d6b856dec1d5"
 dependencies = [
  "proc-macro2",
  "quote",
+ "syn",
+]
+
+[[package]]
+name = "tsify-next"
+version = "0.5.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7d0f2208feeb5f7a6edb15a2389c14cd42480ef6417318316bb866da5806a61d"
+dependencies = [
+ "gloo-utils",
+ "serde",
+ "serde_json",
+ "tsify-next-macros",
+ "wasm-bindgen",
+]
+
+[[package]]
+name = "tsify-next-macros"
+version = "0.5.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f81253930d0d388a3ab8fa4ae56da9973ab171ef833d1be2e9080fc3ce502bd6"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "serde_derive_internals",
  "syn",
 ]
 
@@ -1152,6 +1202,16 @@ name = "wasm-bindgen-test-shared"
 version = "0.2.115"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f032e076ceb8d36d5921c6cef5bf447f2ca2bbd5439ce1683d68d1c99cc2be16"
+
+[[package]]
+name = "web-sys"
+version = "0.3.92"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "84cde8507f4d7cfcb1185b8cb5890c494ffea65edbe1ba82cfd63661c805ed94"
+dependencies = [
+ "js-sys",
+ "wasm-bindgen",
+]
 
 [[package]]
 name = "winapi-util"
