@@ -1,6 +1,6 @@
 use napi::bindgen_prelude::*;
 use napi_derive::napi;
-use sinksight_library_hash::{self as slh, ExtractResult, FunctionHashInfo, CheckResult, FunctionMatch, LibInfo, LibraryMatch};
+use sinksight_library_hash::{self as slh, ExtractResult, FunctionHashInfo, CheckResult, FunctionMatch, DbContents, DbHashRecord, LibInfo, LibraryMatch};
 
 #[napi(object)]
 pub struct JsExtractResult {
@@ -169,6 +169,47 @@ impl From<CheckResult> for JsCheckResult {
             functions: r.functions.into_iter().map(Into::into).collect(),
         }
     }
+}
+
+#[napi(object)]
+pub struct JsDbHashRecord {
+    pub hash: String,
+    pub lib: String,
+    pub version: String,
+}
+
+impl From<DbHashRecord> for JsDbHashRecord {
+    fn from(r: DbHashRecord) -> Self {
+        Self {
+            hash: r.hash,
+            lib: r.lib,
+            version: r.version,
+        }
+    }
+}
+
+#[napi(object)]
+pub struct JsDbContents {
+    pub libs: Vec<JsLibInfo>,
+    pub file_hashes: Vec<JsDbHashRecord>,
+    pub func_hashes: Vec<JsDbHashRecord>,
+}
+
+impl From<DbContents> for JsDbContents {
+    fn from(c: DbContents) -> Self {
+        Self {
+            libs: c.libs.into_iter().map(Into::into).collect(),
+            file_hashes: c.file_hashes.into_iter().map(Into::into).collect(),
+            func_hashes: c.func_hashes.into_iter().map(Into::into).collect(),
+        }
+    }
+}
+
+/// Extract all libraries and hash records from a loaded database.
+/// Returns `null` if the handle is invalid.
+#[napi(js_name = "extractDbContents")]
+pub fn extract_db_contents(db_handle: u32) -> Option<JsDbContents> {
+    slh::extract_db_contents(db_handle).map(Into::into)
 }
 
 /// Match a script against a loaded database. Returns whole-file and per-function matches.

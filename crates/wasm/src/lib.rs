@@ -19,6 +19,8 @@ extern "C" {
 
     #[wasm_bindgen(typescript_type = "LibInfo[] | null")]
     pub type LibInfoArrayOrNull;
+#[wasm_bindgen(typescript_type = "DbContents | null")]
+    pub type DbContentsOrNull;
 }
 
 #[derive(Serialize, Tsify)]
@@ -70,6 +72,22 @@ pub struct FunctionMatch {
 pub struct LibInfo {
     pub name: String,
     pub versions: Vec<String>,
+}
+
+#[derive(Serialize, Tsify)]
+pub struct DbHashRecord {
+    pub hash: String,
+    pub lib: String,
+    pub version: String,
+}
+
+#[derive(Serialize, Tsify)]
+#[tsify(into_wasm_abi)]
+#[serde(rename_all = "camelCase")]
+pub struct DbContents {
+    pub libs: Vec<LibInfo>,
+    pub file_hashes: Vec<DbHashRecord>,
+    pub func_hashes: Vec<DbHashRecord>,
 }
 
 #[derive(Deserialize, Tsify)]
@@ -140,6 +158,22 @@ impl From<slh::FunctionMatch> for FunctionMatch {
 impl From<slh::LibInfo> for LibInfo {
     fn from(l: slh::LibInfo) -> Self {
         Self { name: l.name, versions: l.versions }
+    }
+}
+
+impl From<slh::DbHashRecord> for DbHashRecord {
+    fn from(r: slh::DbHashRecord) -> Self {
+        Self { hash: r.hash, lib: r.lib, version: r.version }
+    }
+}
+
+impl From<slh::DbContents> for DbContents {
+    fn from(c: slh::DbContents) -> Self {
+        Self {
+            libs: c.libs.into_iter().map(Into::into).collect(),
+            file_hashes: c.file_hashes.into_iter().map(Into::into).collect(),
+            func_hashes: c.func_hashes.into_iter().map(Into::into).collect(),
+        }
     }
 }
 
@@ -229,6 +263,19 @@ pub fn list_libs(dbHandle: u32) -> LibInfoArrayOrNull {
     let val = match slh::list_libs(dbHandle) {
         Some(libs) => {
             let typed: Vec<LibInfo> = libs.into_iter().map(Into::into).collect();
+            serde_wasm_bindgen::to_value(&typed).unwrap_or(JsValue::NULL)
+        }
+        None => JsValue::NULL,
+    };
+    val.unchecked_into()
+}
+
+/// Returns `null` if the handle is invalid.
+#[wasm_bindgen(js_name = extractDbContents)]
+pub fn extract_db_contents(dbHandle: u32) -> DbContentsOrNull {
+    let val = match slh::extract_db_contents(dbHandle) {
+        Some(contents) => {
+            let typed: DbContents = contents.into();
             serde_wasm_bindgen::to_value(&typed).unwrap_or(JsValue::NULL)
         }
         None => JsValue::NULL,

@@ -55,3 +55,21 @@ pub struct FunctionMatch {
     pub end_line: u32,
     pub end_column: u32,
 }
+
+/// A resolved hash record extracted from a loaded database.
+#[derive(Debug, Clone, Serialize)]
+pub struct DbHashRecord {
+    /// `slh1-<hex>`
+    pub hash: String,
+    pub lib: String,
+    pub version: String,
+}
+
+/// All data extracted from a loaded `.slhdb` database.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DbContents {
+    pub libs: Vec<LibInfo>,
+    pub file_hashes: Vec<DbHashRecord>,
+    pub func_hashes: Vec<DbHashRecord>,
+}

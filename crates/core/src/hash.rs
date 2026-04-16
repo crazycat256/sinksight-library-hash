@@ -19,7 +19,7 @@ struct HashContext<'a> {
 
 const HEX_CHARS: &[u8; 16] = b"0123456789abcdef";
 
-fn bytes_to_slh1(bytes: &[u8; 32]) -> String {
+pub fn bytes_to_slh1(bytes: &[u8; 32]) -> String {
     let mut result = String::with_capacity(4 + 1 + 64);
     result.push_str(HASH_PREFIX);
     result.push('-');

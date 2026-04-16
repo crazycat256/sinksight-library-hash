@@ -1,5 +1,8 @@
 use std::sync::Mutex;
 
+use crate::hash::bytes_to_slh1;
+use crate::types::{DbContents, DbHashRecord, LibInfo};
+
 const MAGIC: &[u8; 3] = b"SLH";
 const DB_VERSION: u8 = 1;
 
@@ -164,6 +167,41 @@ where
 {
     let store = DB_STORE.lock().unwrap();
     store.get(handle as usize).and_then(|slot| slot.as_ref()).map(f)
+}
+
+/// Extract all libraries and hash records from a loaded database.
+pub fn extract_db_contents(handle: u32) -> Option<DbContents> {
+    with_db(handle, |db| {
+        let libs: Vec<LibInfo> = db
+            .libs
+            .iter()
+            .map(|lib| LibInfo {
+                name: lib.name.clone(),
+                versions: lib.versions.clone(),
+            })
+            .collect();
+
+        let resolve = |entry: &HashEntry| -> Option<DbHashRecord> {
+            let lib = db.libs.get(entry.lib_id as usize)?;
+            let version = lib.versions.get(entry.version_index as usize)?;
+            Some(DbHashRecord {
+                hash: bytes_to_slh1(&entry.hash),
+                lib: lib.name.clone(),
+                version: version.clone(),
+            })
+        };
+
+        let file_hashes: Vec<DbHashRecord> =
+            db.file_hashes.iter().filter_map(resolve).collect();
+        let func_hashes: Vec<DbHashRecord> =
+            db.func_hashes.iter().filter_map(resolve).collect();
+
+        DbContents {
+            libs,
+            file_hashes,
+            func_hashes,
+        }
+    })
 }
 
 fn parse_db(data: &[u8]) -> Result<Db, String> {

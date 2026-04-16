@@ -25,7 +25,7 @@ pub mod types;
 pub(crate) mod visitor;
 
 pub use types::{
-    CheckResult, ExtractResult, FunctionHashInfo,
+    CheckResult, DbContents, DbHashRecord, ExtractResult, FunctionHashInfo,
     FunctionMatch, LibInfo, LibraryMatch,
 };
 
@@ -59,6 +59,10 @@ pub fn list_libs(db_handle: u32) -> Option<Vec<types::LibInfo>> {
             })
             .collect()
     })
+}
+
+pub fn extract_db_contents(db_handle: u32) -> Option<types::DbContents> {
+    db::extract_db_contents(db_handle)
 }
 
 #[cfg(test)]
