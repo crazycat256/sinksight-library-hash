@@ -297,4 +297,30 @@ mod tests {
 
         db::free_db(handle);
     }
+
+    #[test]
+    fn test_sequence_expression_meets_structural_threshold() {
+        let script = "function f(){ return (a(), b(), c()); }";
+
+        let extract = hash::extract_hashes(script, Some(3)).unwrap();
+        assert_eq!(extract.functions.len(), 1);
+        assert_eq!(extract.functions[0].stmt_count, 1);
+    }
+
+    #[test]
+    fn test_compact_sequence_helper_meets_structural_threshold() {
+        let script = "function f(){ var x = (a(), b(), c()); return x; }";
+
+        let extract = hash::extract_hashes(script, Some(3)).unwrap();
+        assert_eq!(extract.functions.len(), 1);
+        assert_eq!(extract.functions[0].stmt_count, 2);
+    }
+
+    #[test]
+    fn test_trivial_single_statement_stays_filtered() {
+        let script = "function f(){ return obj.value; }";
+
+        let extract = hash::extract_hashes(script, Some(3)).unwrap();
+        assert!(extract.functions.is_empty());
+    }
 }

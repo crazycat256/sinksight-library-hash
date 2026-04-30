@@ -9,6 +9,7 @@ use crate::visitor::{ScopeInfo, TokenCollector};
 
 const HASH_PREFIX: &str = "slh1";
 const DEFAULT_MIN_STATEMENTS: u32 = 3;
+const STRUCTURAL_UNITS_PER_STATEMENT: u32 = 2;
 
 struct HashContext<'a> {
     source: &'a str,
@@ -117,6 +118,355 @@ struct RawFunctionInfo {
     span: oxc_span::Span,
     name: Option<String>,
     stmt_count: u32,
+}
+
+fn min_structural_units(min_stmts: u32) -> u32 {
+    min_stmts
+        .saturating_mul(STRUCTURAL_UNITS_PER_STATEMENT)
+        .saturating_sub(1)
+}
+
+fn meets_min_complexity(stmt_count: u32, structural_units: u32, min_stmts: u32) -> bool {
+    stmt_count >= min_stmts || structural_units >= min_structural_units(min_stmts)
+}
+
+fn count_function_body_units(body: &FunctionBody) -> u32 {
+    body.statements.iter().map(count_statement_units).sum()
+}
+
+fn count_class_body_units(body: &ClassBody) -> u32 {
+    body.body.iter().map(count_class_element_units).sum()
+}
+
+fn count_class_element_units(element: &ClassElement) -> u32 {
+    match element {
+        ClassElement::MethodDefinition(m) => 1 + count_function_units(&m.value),
+        ClassElement::PropertyDefinition(p) => {
+            1 + p.value.as_ref().map(count_expression_units).unwrap_or(0)
+        }
+        ClassElement::AccessorProperty(p) => 1 + p.value.as_ref().map(count_expression_units).unwrap_or(0),
+        ClassElement::StaticBlock(block) => {
+            1 + block.body.iter().map(count_statement_units).sum::<u32>()
+        }
+        _ => 1,
+    }
+}
+
+fn count_function_units(function: &Function) -> u32 {
+    function
+        .body
+        .as_ref()
+        .map(|body| count_function_body_units(body))
+        .unwrap_or(1)
+}
+
+fn count_statement_units(stmt: &Statement) -> u32 {
+    match stmt {
+        Statement::ExpressionStatement(s) => 1 + count_expression_units(&s.expression),
+        Statement::ReturnStatement(s) => {
+            1 + s.argument.as_ref().map(count_expression_units).unwrap_or(0)
+        }
+        Statement::ThrowStatement(s) => 1 + count_expression_units(&s.argument),
+        Statement::VariableDeclaration(d) => {
+            1 + d
+                .declarations
+                .iter()
+                .map(|decl| decl.init.as_ref().map(count_expression_units).unwrap_or(0))
+                .sum::<u32>()
+        }
+        Statement::BlockStatement(s) => s.body.iter().map(count_statement_units).sum(),
+        Statement::IfStatement(s) => {
+            1 + count_expression_units(&s.test)
+                + count_statement_units(&s.consequent)
+                + s.alternate.as_ref().map(|alt| count_statement_units(alt)).unwrap_or(0)
+        }
+        Statement::ForStatement(s) => {
+            1 + s
+                .init
+                .as_ref()
+                .map(|init| {
+                    if let ForStatementInit::VariableDeclaration(d) = init {
+                        1 + d
+                            .declarations
+                            .iter()
+                            .map(|decl| decl.init.as_ref().map(count_expression_units).unwrap_or(0))
+                            .sum::<u32>()
+                    } else if let Some(expr) = init.as_expression() {
+                        count_expression_units(expr)
+                    } else {
+                        1
+                    }
+                })
+                .unwrap_or(0)
+                + s.test.as_ref().map(count_expression_units).unwrap_or(0)
+                + s.update.as_ref().map(count_expression_units).unwrap_or(0)
+                + count_statement_units(&s.body)
+        }
+        Statement::ForInStatement(s) => {
+            1
+                + count_for_statement_left_units(&s.left)
+                + count_expression_units(&s.right)
+                + count_statement_units(&s.body)
+        }
+        Statement::ForOfStatement(s) => {
+            1
+                + count_for_statement_left_units(&s.left)
+                + count_expression_units(&s.right)
+                + count_statement_units(&s.body)
+        }
+        Statement::WhileStatement(s) => {
+            1 + count_expression_units(&s.test) + count_statement_units(&s.body)
+        }
+        Statement::DoWhileStatement(s) => {
+            1 + count_statement_units(&s.body) + count_expression_units(&s.test)
+        }
+        Statement::TryStatement(s) => {
+            1
+                + s.block.body.iter().map(count_statement_units).sum::<u32>()
+                + s.handler
+                    .as_ref()
+                    .map(|handler| {
+                        handler.body.body.iter().map(count_statement_units).sum::<u32>()
+                    })
+                    .unwrap_or(0)
+                + s.finalizer
+                    .as_ref()
+                    .map(|finalizer| finalizer.body.iter().map(count_statement_units).sum::<u32>())
+                    .unwrap_or(0)
+        }
+        Statement::SwitchStatement(s) => {
+            1
+                + count_expression_units(&s.discriminant)
+                + s.cases
+                    .iter()
+                    .map(|case| {
+                        case.test.as_ref().map(count_expression_units).unwrap_or(0)
+                            + case.consequent.iter().map(count_statement_units).sum::<u32>()
+                    })
+                    .sum::<u32>()
+        }
+        Statement::LabeledStatement(s) => 1 + count_statement_units(&s.body),
+        Statement::WithStatement(s) => {
+            1 + count_expression_units(&s.object) + count_statement_units(&s.body)
+        }
+        Statement::FunctionDeclaration(f) => 1 + count_function_units(f),
+        Statement::ClassDeclaration(c) => 1 + count_class_body_units(&c.body),
+        Statement::ExportDefaultDeclaration(d) => {
+            1 + match &d.declaration {
+                ExportDefaultDeclarationKind::FunctionDeclaration(f) => count_function_units(f),
+                ExportDefaultDeclarationKind::ClassDeclaration(c) => count_class_body_units(&c.body),
+                _ => d
+                    .declaration
+                    .as_expression()
+                    .map(count_expression_units)
+                    .unwrap_or(0),
+            }
+        }
+        Statement::ExportNamedDeclaration(d) => {
+            1 + d
+                .declaration
+                .as_ref()
+                .map(|decl| match decl {
+                    Declaration::FunctionDeclaration(f) => count_function_units(f),
+                    Declaration::ClassDeclaration(c) => count_class_body_units(&c.body),
+                    Declaration::VariableDeclaration(v) => {
+                        1 + v
+                            .declarations
+                            .iter()
+                            .map(|decl| decl.init.as_ref().map(count_expression_units).unwrap_or(0))
+                            .sum::<u32>()
+                    }
+                    _ => 1,
+                })
+                .unwrap_or(0)
+        }
+        Statement::ExportAllDeclaration(_) => 1,
+        Statement::ImportDeclaration(_) => 1,
+        _ => 1,
+    }
+}
+
+fn count_for_statement_left_units(left: &ForStatementLeft) -> u32 {
+    match left {
+        ForStatementLeft::VariableDeclaration(d) => {
+            1 + d
+                .declarations
+                .iter()
+                .map(|decl| decl.init.as_ref().map(count_expression_units).unwrap_or(0))
+                .sum::<u32>()
+        }
+        _ => left
+            .as_assignment_target()
+            .map(count_assignment_target_units)
+            .unwrap_or(1),
+    }
+}
+
+fn count_assignment_target_units(target: &AssignmentTarget) -> u32 {
+    match target {
+        AssignmentTarget::AssignmentTargetIdentifier(_) => 0,
+        AssignmentTarget::ComputedMemberExpression(m) => {
+            1 + count_expression_units(&m.object) + count_expression_units(&m.expression)
+        }
+        AssignmentTarget::StaticMemberExpression(m) => 1 + count_expression_units(&m.object),
+        AssignmentTarget::PrivateFieldExpression(m) => 1 + count_expression_units(&m.object),
+        AssignmentTarget::ArrayAssignmentTarget(a) => {
+            1 + a
+                .elements
+                .iter()
+                .map(|element| {
+                    element
+                        .as_ref()
+                        .map(count_assignment_target_maybe_default_units)
+                        .unwrap_or(0)
+                })
+                .sum::<u32>()
+                + a.rest
+                    .as_ref()
+                    .map(|rest| count_assignment_target_units(&rest.target))
+                    .unwrap_or(0)
+        }
+        AssignmentTarget::ObjectAssignmentTarget(o) => {
+            1 + o
+                .properties
+                .iter()
+                .map(|prop| match prop {
+                    AssignmentTargetProperty::AssignmentTargetPropertyIdentifier(p) => {
+                        1 + p.init.as_ref().map(count_expression_units).unwrap_or(0)
+                    }
+                    AssignmentTargetProperty::AssignmentTargetPropertyProperty(p) => {
+                        1 + count_assignment_target_maybe_default_units(&p.binding)
+                    }
+                })
+                .sum::<u32>()
+                + o.rest
+                    .as_ref()
+                    .map(|rest| count_assignment_target_units(&rest.target))
+                    .unwrap_or(0)
+        }
+        _ => 0,
+    }
+}
+
+fn count_assignment_target_maybe_default_units(target: &AssignmentTargetMaybeDefault) -> u32 {
+    match target {
+        AssignmentTargetMaybeDefault::AssignmentTargetWithDefault(d) => {
+            1 + count_assignment_target_units(&d.binding) + count_expression_units(&d.init)
+        }
+        _ => target
+            .as_assignment_target()
+            .map(count_assignment_target_units)
+            .unwrap_or(0),
+    }
+}
+
+fn count_expression_units(expr: &Expression) -> u32 {
+    match expr {
+        Expression::Identifier(_)
+        | Expression::ThisExpression(_)
+        | Expression::Super(_)
+        | Expression::BooleanLiteral(_)
+        | Expression::NullLiteral(_)
+        | Expression::NumericLiteral(_)
+        | Expression::BigIntLiteral(_)
+        | Expression::StringLiteral(_)
+        | Expression::RegExpLiteral(_)
+        | Expression::PrivateInExpression(_) => 0,
+        Expression::FunctionExpression(f) => 1 + count_function_units(f),
+        Expression::ArrowFunctionExpression(f) => 1 + f.body.statements.iter().map(count_statement_units).sum::<u32>(),
+        Expression::ClassExpression(c) => 1 + count_class_body_units(&c.body),
+        Expression::StaticMemberExpression(m) => 1 + count_expression_units(&m.object),
+        Expression::ComputedMemberExpression(m) => {
+            1 + count_expression_units(&m.object) + count_expression_units(&m.expression)
+        }
+        Expression::PrivateFieldExpression(m) => 1 + count_expression_units(&m.object),
+        Expression::CallExpression(e) => {
+            1 + count_expression_units(&e.callee)
+                + e.arguments
+                    .iter()
+                    .map(|arg| arg.as_expression().map(count_expression_units).unwrap_or(0))
+                    .sum::<u32>()
+        }
+        Expression::NewExpression(e) => {
+            1 + count_expression_units(&e.callee)
+                + e.arguments
+                    .iter()
+                    .map(|arg| arg.as_expression().map(count_expression_units).unwrap_or(0))
+                    .sum::<u32>()
+        }
+        Expression::AssignmentExpression(e) => {
+            1 + count_assignment_target_units(&e.left) + count_expression_units(&e.right)
+        }
+        Expression::SequenceExpression(e) => {
+            1 + e.expressions.iter().map(count_expression_units).sum::<u32>()
+        }
+        Expression::ConditionalExpression(e) => {
+            1 + count_expression_units(&e.test)
+                + count_expression_units(&e.consequent)
+                + count_expression_units(&e.alternate)
+        }
+        Expression::LogicalExpression(e) => {
+            1 + count_expression_units(&e.left) + count_expression_units(&e.right)
+        }
+        Expression::BinaryExpression(e) => {
+            1 + count_expression_units(&e.left) + count_expression_units(&e.right)
+        }
+        Expression::UnaryExpression(e) => 1 + count_expression_units(&e.argument),
+        Expression::UpdateExpression(_) => 1,
+        Expression::AwaitExpression(e) => 1 + count_expression_units(&e.argument),
+        Expression::YieldExpression(e) => {
+            1 + e.argument.as_ref().map(count_expression_units).unwrap_or(0)
+        }
+        Expression::ParenthesizedExpression(e) => count_expression_units(&e.expression),
+        Expression::ArrayExpression(e) => {
+            1 + e
+                .elements
+                .iter()
+                .map(|element| element.as_expression().map(count_expression_units).unwrap_or(0))
+                .sum::<u32>()
+        }
+        Expression::ObjectExpression(e) => {
+            1 + e
+                .properties
+                .iter()
+                .map(|prop| match prop {
+                    ObjectPropertyKind::ObjectProperty(p) => 1 + count_expression_units(&p.value),
+                    ObjectPropertyKind::SpreadProperty(s) => 1 + count_expression_units(&s.argument),
+                })
+                .sum::<u32>()
+        }
+        Expression::TemplateLiteral(lit) => {
+            1 + lit.expressions.iter().map(count_expression_units).sum::<u32>()
+        }
+        Expression::TaggedTemplateExpression(e) => {
+            1 + count_expression_units(&e.tag)
+                + e.quasi.expressions.iter().map(count_expression_units).sum::<u32>()
+        }
+        Expression::ImportExpression(e) => 1 + count_expression_units(&e.source),
+        Expression::ChainExpression(e) => 1 + count_chain_element_units(&e.expression),
+        Expression::MetaProperty(_) => 1,
+        Expression::JSXElement(_) | Expression::JSXFragment(_) => 1,
+        _ => 1,
+    }
+}
+
+fn count_chain_element_units(element: &ChainElement) -> u32 {
+    match element {
+        ChainElement::CallExpression(call) => {
+            1 + count_expression_units(&call.callee)
+                + call
+                    .arguments
+                    .iter()
+                    .map(|arg| arg.as_expression().map(count_expression_units).unwrap_or(0))
+                    .sum::<u32>()
+        }
+        ChainElement::ComputedMemberExpression(m) => {
+            1 + count_expression_units(&m.object) + count_expression_units(&m.expression)
+        }
+        ChainElement::StaticMemberExpression(m) => 1 + count_expression_units(&m.object),
+        ChainElement::PrivateFieldExpression(m) => 1 + count_expression_units(&m.object),
+        _ => 1,
+    }
 }
 
 pub fn extract_hashes(source: &str, min_statements: Option<u32>) -> Result<ExtractResult, String> {
@@ -437,7 +787,8 @@ fn try_hash_function(
         None => return,
     };
     let stmt_count = body.statements.len() as u32;
-    if stmt_count < ctx.min_stmts {
+    let structural_units = count_function_body_units(body);
+    if !meets_min_complexity(stmt_count, structural_units, ctx.min_stmts) {
         return;
     }
     let scope_id = match f.scope_id.get() {
@@ -465,7 +816,8 @@ fn try_hash_arrow(
         return;
     }
     let stmt_count = f.body.statements.len() as u32;
-    if stmt_count < ctx.min_stmts {
+    let structural_units: u32 = f.body.statements.iter().map(count_statement_units).sum();
+    if !meets_min_complexity(stmt_count, structural_units, ctx.min_stmts) {
         return;
     }
     let scope_id = match f.scope_id.get() {
@@ -490,7 +842,8 @@ fn try_hash_class(
     out: &mut Vec<RawFunctionInfo>,
 ) {
     let stmt_count = c.body.body.len() as u32;
-    if stmt_count < ctx.min_stmts {
+    let structural_units = count_class_body_units(&c.body);
+    if !meets_min_complexity(stmt_count, structural_units, ctx.min_stmts) {
         return;
     }
     let scope_id = match c.scope_id.get() {

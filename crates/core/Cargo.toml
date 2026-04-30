@@ -5,6 +5,10 @@ edition = "2021"
 description = "AST-based JavaScript library fingerprinting (slh1 hashes)."
 license = "GPL-3.0"
 
+[[bin]]
+name = "slh"
+path = "src/main.rs"
+
 [lib]
 crate-type = ["rlib"]
 

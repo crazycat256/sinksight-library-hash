@@ -1,19 +1,9 @@
-use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 
 use oxc_ast::ast::*;
 use oxc_semantic::{ScopeId, Scoping, SymbolId};
 use oxc_span::Span;
 use sha2::{Digest, Sha256};
-
-/// Equivalent to JS `name.replace(/[0-9]+/g, "")`.
-fn strip_digits(name: &str) -> Cow<'_, str> {
-    if name.bytes().any(|b| b.is_ascii_digit()) {
-        Cow::Owned(name.chars().filter(|c| !c.is_ascii_digit()).collect())
-    } else {
-        Cow::Borrowed(name)
-    }
-}
 
 pub struct ScopeInfo {
     children: HashMap<ScopeId, Vec<ScopeId>>,
@@ -66,6 +56,8 @@ pub struct TokenCollector<'a> {
     scope_info: &'a ScopeInfo,
     label_numbers: HashMap<String, usize>,
     label_counter: usize,
+    free_ref_numbers: HashMap<String, u32>,
+    free_ref_counter: u32,
 }
 
 impl<'a> TokenCollector<'a> {
@@ -85,6 +77,8 @@ impl<'a> TokenCollector<'a> {
             scope_info,
             label_numbers: HashMap::new(),
             label_counter: 0,
+            free_ref_numbers: HashMap::new(),
+            free_ref_counter: 0,
         }
     }
 
@@ -106,6 +100,8 @@ impl<'a> TokenCollector<'a> {
             scope_info,
             label_numbers: HashMap::new(),
             label_counter: 0,
+            free_ref_numbers: HashMap::new(),
+            free_ref_counter: 0,
         }
     }
 
@@ -140,6 +136,22 @@ impl<'a> TokenCollector<'a> {
         self.tokens.push(format!("L{index}"));
         self.emit_separator();
         self.hasher.update(b"L");
+        self.hash_u32(index);
+    }
+
+    fn push_free_ref(&mut self, name: &str) {
+        let index = if let Some(&idx) = self.free_ref_numbers.get(name) {
+            idx
+        } else {
+            let idx = self.free_ref_counter;
+            self.free_ref_counter += 1;
+            self.free_ref_numbers.insert(name.to_string(), idx);
+            idx
+        };
+        #[cfg(feature = "debug-ir")]
+        self.tokens.push(format!("F{index}"));
+        self.emit_separator();
+        self.hasher.update(b"F");
         self.hash_u32(index);
     }
 
@@ -237,7 +249,7 @@ impl<'a> TokenCollector<'a> {
                 }
             }
         }
-        self.push(&strip_digits(&ident.name));
+        self.push_free_ref(&ident.name);
     }
 
     fn emit_binding_ident(&mut self, ident: &BindingIdentifier) {
@@ -250,7 +262,7 @@ impl<'a> TokenCollector<'a> {
                 }
             }
         }
-        self.push(&strip_digits(&ident.name));
+        self.push_free_ref(&ident.name);
     }
 
     fn emit_label_ident(&mut self, ident: &LabelIdentifier) {
@@ -730,9 +742,9 @@ impl<'a> TokenCollector<'a> {
             Expression::MetaProperty(m) => {
                 self.push("MetaProperty");
                 self.push("Identifier");
-                self.push(&strip_digits(&m.meta.name));
+                self.push(&m.meta.name);
                 self.push("Identifier");
-                self.push(&strip_digits(&m.property.name));
+                self.push(&m.property.name);
             }
             Expression::Super(_) => {
                 self.push("Super");
@@ -795,7 +807,7 @@ impl<'a> TokenCollector<'a> {
                     if let Expression::NumericLiteral(lit) = &e.argument {
                         if lit.value == 0.0 {
                             self.push("Identifier");
-                            self.push("undefined");
+                            self.push_free_ref("undefined");
                             return;
                         }
                     }
@@ -937,7 +949,7 @@ impl<'a> TokenCollector<'a> {
         match key {
             PropertyKey::StaticIdentifier(id) => {
                 self.push("Identifier");
-                self.push(&strip_digits(&id.name));
+                self.push(&id.name);
             }
             PropertyKey::PrivateIdentifier(id) => {
                 self.visit_private_identifier(id);
@@ -947,7 +959,7 @@ impl<'a> TokenCollector<'a> {
                     // Normalize: {"catch": v} and {catch: v} emit the same tokens
                     if let Expression::StringLiteral(s) = expr {
                         self.push("Identifier");
-                        self.push(&strip_digits(&s.value));
+                        self.push(&s.value);
                         return;
                     }
                     self.visit_expression(expr);
@@ -959,7 +971,7 @@ impl<'a> TokenCollector<'a> {
     fn visit_private_identifier(&mut self, id: &PrivateIdentifier) {
         self.push("PrivateName");
         self.push("Identifier");
-        self.push(&strip_digits(&id.name));
+        self.push(&id.name);
     }
 
     fn visit_assignment_expression(&mut self, e: &AssignmentExpression) {
@@ -1033,7 +1045,7 @@ impl<'a> TokenCollector<'a> {
         self.visit_expression(&m.object);
         // Static property is always a free identifier (not a binding)
         self.push("Identifier");
-        self.push(&strip_digits(&m.property.name));
+        self.push(&m.property.name);
     }
 
     fn visit_computed_member(&mut self, m: &ComputedMemberExpression, in_chain: bool) {
@@ -1046,7 +1058,7 @@ impl<'a> TokenCollector<'a> {
         // Normalize: obj["foo"] -> same as obj.foo
         if let Expression::StringLiteral(s) = &m.expression {
             self.push("Identifier");
-            self.push(&strip_digits(&s.value));
+            self.push(&s.value);
             return;
         }
         self.visit_expression(&m.expression);
@@ -1284,7 +1296,7 @@ impl<'a> TokenCollector<'a> {
         match name {
             ModuleExportName::IdentifierName(id) => {
                 self.push("Identifier");
-                self.push(&strip_digits(&id.name));
+                self.push(&id.name);
             }
             ModuleExportName::IdentifierReference(id) => {
                 self.emit_identifier_ref(id);

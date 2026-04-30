@@ -86,6 +86,10 @@ L'implémentation utilise `oxc_semantic` qui fournit les scopes et les bindings 
 
 Chaque scope maintient un **compteur de bindings** (démarrant à 0). Quand un binding local est **déclaré**, il se voit attribuer le prochain numéro séquentiel dans son scope. Quand ce binding est **référencé**, le token émis est `L<n>` (où `<n>` est le numéro attribué à la déclaration).
 
+**Normalisation des références libres :**
+
+Un **compteur global de références libres** (démarrant à 0, partagé sur tout le sous-arbre hashé) attribue un numéro séquentiel à chaque nom de variable libre distinct, dans l'ordre de première apparition lors de la traversée DFS. Quand une référence libre est rencontrée, le token émis est `F<n>` (où `<n>` est le numéro attribué à ce nom).
+
 Exemple :
 ```javascript
 // Original
@@ -93,24 +97,31 @@ function ajax(url, options) {
     var xhr = new XMLHttpRequest();
     xhr.open(options.method, url);
 }
-// Tokens : ...Identifier,L0, Identifier,L1, ...Identifier,L2, ...
-//           (url=L0)     (options=L1)       (xhr=L2)
+// Tokens : ...Identifier,L0, Identifier,L1, ...Identifier,L2, ...Identifier,F0, ...
+//           (url=L0)     (options=L1)       (xhr=L2)            (XMLHttpRequest=F0)
 
 // Après renommage (minification légère)
 function ajax(e, t) {
     var n = new XMLHttpRequest();
     n.open(t.method, e);
 }
-// Tokens : ...Identifier,L0, Identifier,L1, ...Identifier,L2, ...
-//           (e=L0)       (t=L1)              (n=L2)
+// Tokens : ...Identifier,L0, Identifier,L1, ...Identifier,L2, ...Identifier,F0, ...
+//           (e=L0)       (t=L1)              (n=L2)              (XMLHttpRequest=F0)
 
-// -> MÊME hash ! Les références libres (XMLHttpRequest, .open, .method) sont préservées.
+// -> MÊME hash ! Toutes les variables sont normalisées.
+
+// Après bundling (XMLHttpRequest passé en paramètre du wrapper)
+function ajax(e, t, r) {
+    var n = new r();
+    n.open(t.method, e);
+}
+// Tokens : ...Identifier,L0, Identifier,L1, Identifier,L2, ...Identifier,L3, ...
+//           (e=L0)       (t=L1)             (r=L2)           (n=L3)
+// -> Hash DIFFÉRENT : le nombre de paramètres a changé, r est maintenant local.
+// Mais si le bundler ne modifie pas la structure interne de la fonction, le hash reste stable.
 ```
 
-**Références libres :** le nom original est conservé tel quel dans le hash (avec le stripping des digits, voir ci-dessous). Cela inclut :
-- Les globals du navigateur (`document`, `window`, `navigator`, `XMLHttpRequest`...)
-- Les propriétés de member expressions (`obj.forEach`, `arr.length`)
-- Les noms de fonctions lorsqu'ils référencent un binding externe
+Les noms de **propriétés** (member expressions non-computed, clés d'objets, identifiants privés) conservent leur nom original, car ils ne font pas partie d'un scope et ne sont jamais renommés par les bundlers.
 
 **Règle de scope pour le hashing de sous-arbres :** quand on hash une fonction individuelle (pas le Programme entier), les bindings sont relatifs au **sous-arbre hashé**. Un identifiant qui fait référence à un binding déclaré *dans* la fonction hashée est local ; un identifiant qui référence un binding déclaré *en dehors* (dans un scope parent, ou global) est une référence libre.
 
@@ -139,22 +150,20 @@ Note : cette exception ne s'applique pas au hash du fichier entier (`Program`), 
 
 Pour les nœuds `Identifier` :
 - Si c'est un **binding local** (déclaration ou référence) : émettre `L<n>` où `<n>` est le numéro séquentiel attribué dans le scope de déclaration
-- Si c'est une **référence libre** : émettre le nom de l'identifiant, **avec les chiffres remplacés par la chaîne vide**
+- Si c'est une **référence libre** : émettre `F<n>` où `<n>` est le numéro séquentiel attribué à ce nom de variable libre (compteur global sur le sous-arbre hashé, incrémenté à la première occurrence de chaque nom distinct)
 
 ```javascript
 // Les noms locaux sont normalisés :
 // "url" -> "L0", "options" -> "L1", "xhr" -> "L2"  (peu importe le nom)
 
-// Les noms libres gardent leur identité (digits strippés) :
-// "XMLHttpRequest" -> "XMLHttpRequest"
-// "identifier_42" -> "identifier_"
-// "_0" -> "_"
+// Les noms libres sont aussi normalisés :
+// "XMLHttpRequest" -> "F0" (première free ref rencontrée)
+// "console" -> "F1" (deuxième free ref distincte rencontrée)
+// "XMLHttpRequest" (deuxième occurrence) -> "F0" (même numéro)
 ```
 
-La regex de stripping des digits pour les références libres : `name.replace(/[0-9]+/g, "")`
-
 #### 3. Propriétés de MemberExpression non-computed
-Pour un nœud `MemberExpression` dont `computed == false` et dont `property` est un `Identifier` : ajouter le nom de la propriété (avec stripping des digits). Les propriétés de member expressions sont **toujours des références libres** (elles ne font pas partie d'un scope).
+Pour un nœud `MemberExpression` dont `computed == false` et dont `property` est un `Identifier` : ajouter le nom de la propriété tel quel. Les propriétés de member expressions ne font pas partie d'un scope et ne sont jamais renommées par les bundlers.
 
 ```javascript
 // obj.forEach -> token "forEach"

@@ -128,6 +128,29 @@ cargo build --release
 cargo test
 ```
 
+### CLI
+
+The Rust crate also builds a small CLI binary named `slh` for local debugging.
+
+```bash
+cargo run -p sinksight-library-hash --bin slh -- check \
+    --db path/to/library.slhdb \
+    --script path/to/file.js
+```
+
+It prints JSON with:
+
+It prints one match per line:
+
+- `whole-file<TAB><lib>@<version>`
+- `function<TAB><startLine>:<startColumn>-<endLine>:<endColumn><TAB><functionName><TAB><lib>@<version>`
+
+Positional form is also supported:
+
+```bash
+cargo run -p sinksight-library-hash --bin slh -- check path/to/library.slhdb path/to/file.js
+```
+
 ---
 
 ## JavaScript — WebAssembly (`@sinksight/library-hash`)
