@@ -3,7 +3,7 @@
 //! Produces deterministic [`slh1`](https://github.com/crazycat256/sinksight-library-hash)
 //! hashes for JS files and their individual functions. Hashes are stable across
 //! minification, re-formatting, and variable renaming, making them suitable for
-//! identifying known libraries (jQuery, Lodash, React …).
+//! identifying known libraries (jQuery, Lodash, React ...).
 //!
 //! # Usage
 //!
