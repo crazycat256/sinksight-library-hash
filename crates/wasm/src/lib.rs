@@ -19,7 +19,7 @@ extern "C" {
 
     #[wasm_bindgen(typescript_type = "LibInfo[] | null")]
     pub type LibInfoArrayOrNull;
-#[wasm_bindgen(typescript_type = "DbContents | null")]
+    #[wasm_bindgen(typescript_type = "DbContents | null")]
     pub type DbContentsOrNull;
 }
 
@@ -138,7 +138,10 @@ impl From<slh::CheckResult> for CheckResult {
 
 impl From<slh::LibraryMatch> for LibraryMatch {
     fn from(m: slh::LibraryMatch) -> Self {
-        Self { lib: m.lib, version: m.version }
+        Self {
+            lib: m.lib,
+            version: m.version,
+        }
     }
 }
 
@@ -157,13 +160,20 @@ impl From<slh::FunctionMatch> for FunctionMatch {
 
 impl From<slh::LibInfo> for LibInfo {
     fn from(l: slh::LibInfo) -> Self {
-        Self { name: l.name, versions: l.versions }
+        Self {
+            name: l.name,
+            versions: l.versions,
+        }
     }
 }
 
 impl From<slh::DbHashRecord> for DbHashRecord {
     fn from(r: slh::DbHashRecord) -> Self {
-        Self { hash: r.hash, lib: r.lib, version: r.version }
+        Self {
+            hash: r.hash,
+            lib: r.lib,
+            version: r.version,
+        }
     }
 }
 
@@ -224,21 +234,23 @@ pub fn build_db(
     let libs_vec: Vec<(String, Vec<String>)> =
         libs.into_iter().map(|l| (l.name, l.versions)).collect();
 
-    let parse = |entries: Vec<HashEntry>, label: &str| -> Result<Vec<([u8; 32], u16, u16)>, JsValue> {
-        entries
-            .into_iter()
-            .map(|e| {
-                let hash = slh::parse_hash_bytes(&e.hash)
-                    .ok_or_else(|| JsValue::from_str(&format!("{label}: malformed hash: {}", e.hash)))?;
-                Ok((hash, e.lib_id, e.version_index))
-            })
-            .collect()
-    };
+    let parse =
+        |entries: Vec<HashEntry>, label: &str| -> Result<Vec<([u8; 32], u16, u16)>, JsValue> {
+            entries
+                .into_iter()
+                .map(|e| {
+                    let hash = slh::parse_hash_bytes(&e.hash).ok_or_else(|| {
+                        JsValue::from_str(&format!("{label}: malformed hash: {}", e.hash))
+                    })?;
+                    Ok((hash, e.lib_id, e.version_index))
+                })
+                .collect()
+        };
 
     let file = parse(file_hashes, "fileHashes")?;
     let func = parse(func_hashes, "funcHashes")?;
 
-    Ok(slh::db::build_db(minStatements, &libs_vec, file, func))
+    slh::db::try_build_db(minStatements, &libs_vec, file, func).map_err(|e| JsValue::from_str(&e))
 }
 
 /// Parse an `slh1-<hex>` hash string into its raw 32-byte digest.

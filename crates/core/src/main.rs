@@ -2,7 +2,9 @@ use std::env;
 use std::fs;
 use std::process;
 
-use sinksight_library_hash::{check_script, free_db, load_db, CheckResult, FunctionMatch, LibraryMatch};
+use sinksight_library_hash::{
+    check_script, load_db_handle, CheckResult, FunctionMatch, LibraryMatch,
+};
 
 fn main() {
     if let Err(error) = run(env::args().skip(1)) {
@@ -17,7 +19,10 @@ where
     I::Item: Into<String>,
 {
     match parse_args(args)? {
-        Command::Check { db_path, script_path } => run_check(&db_path, &script_path),
+        Command::Check {
+            db_path,
+            script_path,
+        } => run_check(&db_path, &script_path),
         Command::Help => {
             print_usage();
             Ok(())
@@ -27,7 +32,10 @@ where
 
 #[derive(Debug)]
 enum Command {
-    Check { db_path: String, script_path: String },
+    Check {
+        db_path: String,
+        script_path: String,
+    },
     Help,
 }
 
@@ -44,10 +52,7 @@ where
     match command.as_str() {
         "help" | "--help" | "-h" => Ok(Command::Help),
         "check" => parse_check_args(args),
-        other => Err(format!(
-            "unknown command `{other}`\n\n{}",
-            usage_text()
-        )),
+        other => Err(format!("unknown command `{other}`\n\n{}", usage_text())),
     }
 }
 
@@ -76,10 +81,7 @@ where
             }
             "--help" | "-h" => return Ok(Command::Help),
             value if value.starts_with('-') => {
-                return Err(format!(
-                    "unknown option `{value}`\n\n{}",
-                    usage_text()
-                ));
+                return Err(format!("unknown option `{value}`\n\n{}", usage_text()));
             }
             value => positional.push(value.to_string()),
         }
@@ -97,8 +99,7 @@ where
     }
 
     let db_path = db_path.ok_or_else(|| format!("missing --db\n\n{}", usage_text()))?;
-    let script_path =
-        script_path.ok_or_else(|| format!("missing --script\n\n{}", usage_text()))?;
+    let script_path = script_path.ok_or_else(|| format!("missing --script\n\n{}", usage_text()))?;
 
     Ok(Command::Check {
         db_path,
@@ -112,9 +113,8 @@ fn run_check(db_path: &str, script_path: &str) -> Result<(), String> {
     let script = fs::read_to_string(script_path)
         .map_err(|error| format!("failed to read script `{script_path}`: {error}"))?;
 
-    let handle = load_db(&db_bytes)?;
-    let result = check_script(handle, &script);
-    free_db(handle);
+    let db = load_db_handle(&db_bytes)?;
+    let result = check_script(db.handle(), &script);
 
     let output = render_check_result(&result);
     if !output.is_empty() {
@@ -171,14 +171,19 @@ fn print_usage() {
 
 #[cfg(test)]
 mod tests {
-    use super::{parse_args, render_check_result, CheckResult, Command, FunctionMatch, LibraryMatch};
+    use super::{
+        parse_args, render_check_result, CheckResult, Command, FunctionMatch, LibraryMatch,
+    };
 
     #[test]
     fn parse_check_flags() {
         let command = parse_args(["check", "--db", "db.slhdb", "--script", "file.js"])
             .expect("check command should parse");
         match command {
-            Command::Check { db_path, script_path } => {
+            Command::Check {
+                db_path,
+                script_path,
+            } => {
                 assert_eq!(db_path, "db.slhdb");
                 assert_eq!(script_path, "file.js");
             }
@@ -191,7 +196,10 @@ mod tests {
         let command =
             parse_args(["check", "db.slhdb", "file.js"]).expect("check command should parse");
         match command {
-            Command::Check { db_path, script_path } => {
+            Command::Check {
+                db_path,
+                script_path,
+            } => {
                 assert_eq!(db_path, "db.slhdb");
                 assert_eq!(script_path, "file.js");
             }

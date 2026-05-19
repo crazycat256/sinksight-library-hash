@@ -1,6 +1,9 @@
 use napi::bindgen_prelude::*;
 use napi_derive::napi;
-use sinksight_library_hash::{self as slh, ExtractResult, FunctionHashInfo, CheckResult, FunctionMatch, DbContents, DbHashRecord, LibInfo, LibraryMatch};
+use sinksight_library_hash::{
+    self as slh, CheckResult, DbContents, DbHashRecord, ExtractResult, FunctionHashInfo,
+    FunctionMatch, LibInfo, LibraryMatch,
+};
 
 #[napi(object)]
 pub struct JsExtractResult {
@@ -81,34 +84,28 @@ pub fn build_db(
     file_hashes: Vec<JsHashEntry>,
     func_hashes: Vec<JsHashEntry>,
 ) -> Result<Buffer> {
-    let libs_vec: Vec<(String, Vec<String>)> = libs
-        .into_iter()
-        .map(|l| (l.name, l.versions))
-        .collect();
+    let libs_vec: Vec<(String, Vec<String>)> =
+        libs.into_iter().map(|l| (l.name, l.versions)).collect();
 
-    let parse_entries =
-        |entries: Vec<JsHashEntry>,
-         label: &str|
-         -> std::result::Result<Vec<([u8; 32], u16, u16)>, String> {
-            entries
-                .into_iter()
-                .map(|e| {
-                    let hash = slh::parse_hash_bytes(&e.hash)
-                        .ok_or_else(|| format!("{label}: malformed hash: {}", e.hash))?;
-                    Ok((hash, e.lib_id, e.version_index))
-                })
-                .collect()
-        };
+    let parse_entries = |entries: Vec<JsHashEntry>,
+                         label: &str|
+     -> std::result::Result<Vec<([u8; 32], u16, u16)>, String> {
+        entries
+            .into_iter()
+            .map(|e| {
+                let hash = slh::parse_hash_bytes(&e.hash)
+                    .ok_or_else(|| format!("{label}: malformed hash: {}", e.hash))?;
+                Ok((hash, e.lib_id, e.version_index))
+            })
+            .collect()
+    };
 
     let file = parse_entries(file_hashes, "file_hashes").map_err(|e| Error::from_reason(e))?;
     let func = parse_entries(func_hashes, "func_hashes").map_err(|e| Error::from_reason(e))?;
 
-    Ok(Buffer::from(slh::db::build_db(
-        min_statements,
-        &libs_vec,
-        file,
-        func,
-    )))
+    let db =
+        slh::db::try_build_db(min_statements, &libs_vec, file, func).map_err(Error::from_reason)?;
+    Ok(Buffer::from(db))
 }
 
 /// Load a pre-built binary `.slhdb` database into memory.

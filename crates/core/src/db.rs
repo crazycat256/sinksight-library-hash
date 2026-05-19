@@ -166,7 +166,10 @@ where
     F: FnOnce(&Db) -> R,
 {
     let store = DB_STORE.lock().unwrap();
-    store.get(handle as usize).and_then(|slot| slot.as_ref()).map(f)
+    store
+        .get(handle as usize)
+        .and_then(|slot| slot.as_ref())
+        .map(f)
 }
 
 /// Extract all libraries and hash records from a loaded database.
@@ -191,10 +194,8 @@ pub fn extract_db_contents(handle: u32) -> Option<DbContents> {
             })
         };
 
-        let file_hashes: Vec<DbHashRecord> =
-            db.file_hashes.iter().filter_map(resolve).collect();
-        let func_hashes: Vec<DbHashRecord> =
-            db.func_hashes.iter().filter_map(resolve).collect();
+        let file_hashes: Vec<DbHashRecord> = db.file_hashes.iter().filter_map(resolve).collect();
+        let func_hashes: Vec<DbHashRecord> = db.func_hashes.iter().filter_map(resolve).collect();
 
         DbContents {
             libs,
@@ -325,6 +326,9 @@ fn parse_db(data: &[u8]) -> Result<Db, String> {
         }
     }
 
+    validate_parsed_hash_refs("file hash", &libs, &file_hashes)?;
+    validate_parsed_hash_refs("function hash", &libs, &func_hashes)?;
+
     let bloom = if offset + 5 <= data.len() {
         let bloom_size = u32::from_le_bytes([
             data[offset],
@@ -362,9 +366,21 @@ fn parse_db(data: &[u8]) -> Result<Db, String> {
 pub fn build_db(
     min_statements: u8,
     libs: &[(String, Vec<String>)],
+    file_hashes: Vec<([u8; 32], u16, u16)>,
+    func_hashes: Vec<([u8; 32], u16, u16)>,
+) -> Vec<u8> {
+    try_build_db(min_statements, libs, file_hashes, func_hashes)
+        .expect("invalid .slhdb build inputs")
+}
+
+pub fn try_build_db(
+    min_statements: u8,
+    libs: &[(String, Vec<String>)],
     mut file_hashes: Vec<([u8; 32], u16, u16)>,
     mut func_hashes: Vec<([u8; 32], u16, u16)>,
-) -> Vec<u8> {
+) -> Result<Vec<u8>, String> {
+    validate_build_inputs(libs, &file_hashes, &func_hashes)?;
+
     file_hashes.sort_by(|a, b| a.0.cmp(&b.0));
     func_hashes.sort_by(|a, b| a.0.cmp(&b.0));
 
@@ -405,5 +421,95 @@ pub fn build_db(
     buf.push(bloom.hash_count);
     buf.extend_from_slice(&bloom.data);
 
-    buf
+    Ok(buf)
+}
+
+fn validate_build_inputs(
+    libs: &[(String, Vec<String>)],
+    file_hashes: &[([u8; 32], u16, u16)],
+    func_hashes: &[([u8; 32], u16, u16)],
+) -> Result<(), String> {
+    if libs.len() > u16::MAX as usize + 1 {
+        return Err(format!(
+            "too many libraries for .slhdb v1: {} > {}",
+            libs.len(),
+            u16::MAX as usize + 1
+        ));
+    }
+
+    for (lib_index, (name, versions)) in libs.iter().enumerate() {
+        if name.len() > u8::MAX as usize {
+            return Err(format!(
+                "library name at index {lib_index} is too long for .slhdb v1: {} bytes > {}",
+                name.len(),
+                u8::MAX
+            ));
+        }
+        if versions.len() > u16::MAX as usize {
+            return Err(format!(
+                "library `{name}` has too many versions for .slhdb v1: {} > {}",
+                versions.len(),
+                u16::MAX
+            ));
+        }
+        for version in versions {
+            if version.len() > u8::MAX as usize {
+                return Err(format!(
+                    "version `{version}` for library `{name}` is too long for .slhdb v1: {} bytes > {}",
+                    version.len(),
+                    u8::MAX
+                ));
+            }
+        }
+    }
+
+    validate_hash_refs("file hash", libs, file_hashes)?;
+    validate_hash_refs("function hash", libs, func_hashes)
+}
+
+fn validate_hash_refs(
+    label: &str,
+    libs: &[(String, Vec<String>)],
+    hashes: &[([u8; 32], u16, u16)],
+) -> Result<(), String> {
+    for (_, lib_id, version_index) in hashes {
+        let Some((name, versions)) = libs.get(*lib_id as usize) else {
+            return Err(format!(
+                "{label} references missing library id {lib_id}; database has {} libraries",
+                libs.len()
+            ));
+        };
+        if versions.get(*version_index as usize).is_none() {
+            return Err(format!(
+                "{label} references missing version index {version_index} for library `{name}`; library has {} versions",
+                versions.len()
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn validate_parsed_hash_refs(
+    label: &str,
+    libs: &[LibEntry],
+    hashes: &[HashEntry],
+) -> Result<(), String> {
+    for entry in hashes {
+        let Some(lib) = libs.get(entry.lib_id as usize) else {
+            return Err(format!(
+                "{label} table references missing library id {}; database has {} libraries",
+                entry.lib_id,
+                libs.len()
+            ));
+        };
+        if lib.versions.get(entry.version_index as usize).is_none() {
+            return Err(format!(
+                "{label} table references missing version index {} for library `{}`; library has {} versions",
+                entry.version_index,
+                lib.name,
+                lib.versions.len()
+            ));
+        }
+    }
+    Ok(())
 }

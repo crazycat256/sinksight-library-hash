@@ -25,16 +25,36 @@ pub mod types;
 pub(crate) mod visitor;
 
 pub use types::{
-    CheckResult, DbContents, DbHashRecord, ExtractResult, FunctionHashInfo,
-    FunctionMatch, LibInfo, LibraryMatch,
+    CheckResult, DbContents, DbHashRecord, ExtractResult, FunctionHashInfo, FunctionMatch, LibInfo,
+    LibraryMatch,
 };
 
 pub fn extract_hashes(script: &str, min_statements: Option<u32>) -> Result<ExtractResult, String> {
     hash::extract_hashes(script, min_statements)
 }
 
+pub struct LoadedDb {
+    handle: u32,
+}
+
+impl LoadedDb {
+    pub fn handle(&self) -> u32 {
+        self.handle
+    }
+}
+
+impl Drop for LoadedDb {
+    fn drop(&mut self) {
+        db::free_db(self.handle);
+    }
+}
+
 pub fn load_db(data: &[u8]) -> Result<u32, String> {
     db::load_db(data)
+}
+
+pub fn load_db_handle(data: &[u8]) -> Result<LoadedDb, String> {
+    db::load_db(data).map(|handle| LoadedDb { handle })
 }
 
 pub fn check_script(db_handle: u32, script: &str) -> CheckResult {
@@ -195,8 +215,16 @@ mod tests {
         "#;
 
         let extract = hash::extract_hashes(script, Some(3)).unwrap();
-        let outer = extract.functions.iter().find(|f| f.name.as_deref() == Some("outer")).unwrap();
-        let inner = extract.functions.iter().find(|f| f.name.as_deref() == Some("inner")).unwrap();
+        let outer = extract
+            .functions
+            .iter()
+            .find(|f| f.name.as_deref() == Some("outer"))
+            .unwrap();
+        let inner = extract
+            .functions
+            .iter()
+            .find(|f| f.name.as_deref() == Some("inner"))
+            .unwrap();
         let outer_hash = hash::parse_hash_bytes(&outer.hash).unwrap();
         let inner_hash = hash::parse_hash_bytes(&inner.hash).unwrap();
 
@@ -226,7 +254,11 @@ mod tests {
         "#;
 
         let extract = hash::extract_hashes(script, Some(3)).unwrap();
-        let inner = extract.functions.iter().find(|f| f.name.as_deref() == Some("inner")).unwrap();
+        let inner = extract
+            .functions
+            .iter()
+            .find(|f| f.name.as_deref() == Some("inner"))
+            .unwrap();
         let inner_hash = hash::parse_hash_bytes(&inner.hash).unwrap();
 
         let db_data = db::build_db(
