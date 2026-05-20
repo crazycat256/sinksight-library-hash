@@ -15,9 +15,35 @@ pub struct ExtractResult {
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct DetailedExtractResult {
+    pub file_hash: String,
+    pub file_canonical: String,
+    pub functions: Vec<DetailedFunctionHashInfo>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct FunctionHashInfo {
     /// `slh1-<hex>`
     pub hash: String,
+    pub name: Option<String>,
+    /// 1-indexed
+    pub start_line: u32,
+    /// 0-indexed
+    pub start_column: u32,
+    /// 1-indexed
+    pub end_line: u32,
+    /// 0-indexed
+    pub end_column: u32,
+    pub stmt_count: u32,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DetailedFunctionHashInfo {
+    /// `slh1-<hex>`
+    pub hash: String,
+    pub canonical: String,
     pub name: Option<String>,
     /// 1-indexed
     pub start_line: u32,

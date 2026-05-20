@@ -28,7 +28,10 @@ impl ScopeInfo {
                 binding_numbers.insert(*sym_id, i as u32);
             }
         }
-        Self { children, binding_numbers }
+        Self {
+            children,
+            binding_numbers,
+        }
     }
 
     fn descendant_scopes(&self, root: ScopeId) -> HashSet<ScopeId> {
@@ -47,7 +50,6 @@ impl ScopeInfo {
 pub struct TokenCollector<'a> {
     hasher: Sha256,
     has_previous: bool,
-    #[cfg(feature = "debug-ir")]
     pub tokens: Vec<String>,
     scoping: &'a Scoping,
     #[allow(dead_code)]
@@ -61,7 +63,11 @@ pub struct TokenCollector<'a> {
 }
 
 impl<'a> TokenCollector<'a> {
-    pub fn for_program(scoping: &'a Scoping, source_text: &'a str, scope_info: &'a ScopeInfo) -> Self {
+    pub fn for_program(
+        scoping: &'a Scoping,
+        source_text: &'a str,
+        scope_info: &'a ScopeInfo,
+    ) -> Self {
         let mut local_scopes = HashSet::new();
         for scope_id in scoping.scope_descendants_from_root() {
             local_scopes.insert(scope_id);
@@ -69,7 +75,6 @@ impl<'a> TokenCollector<'a> {
         Self {
             hasher: Sha256::new(),
             has_previous: false,
-            #[cfg(feature = "debug-ir")]
             tokens: Vec::new(),
             scoping,
             source_text,
@@ -92,7 +97,6 @@ impl<'a> TokenCollector<'a> {
         Self {
             hasher: Sha256::new(),
             has_previous: false,
-            #[cfg(feature = "debug-ir")]
             tokens: Vec::new(),
             scoping,
             source_text,
@@ -106,7 +110,6 @@ impl<'a> TokenCollector<'a> {
     }
 
     fn push(&mut self, token: &str) {
-        #[cfg(feature = "debug-ir")]
         self.tokens.push(token.to_string());
         self.emit_separator();
         self.escape_to_hasher(token.as_bytes());
@@ -114,7 +117,6 @@ impl<'a> TokenCollector<'a> {
 
     /// Push a token of the form `{prefix}{value}`, only escaping the value part.
     fn push_prefixed(&mut self, prefix: &str, value: &str) {
-        #[cfg(feature = "debug-ir")]
         self.tokens.push(format!("{prefix}{value}"));
         self.emit_separator();
         self.hasher.update(prefix.as_bytes());
@@ -122,7 +124,6 @@ impl<'a> TokenCollector<'a> {
     }
 
     fn push_regex(&mut self, pattern: &str, flags: &str) {
-        #[cfg(feature = "debug-ir")]
         self.tokens.push(format!("R:{pattern}:{flags}"));
         self.emit_separator();
         self.hasher.update(b"R:");
@@ -132,7 +133,6 @@ impl<'a> TokenCollector<'a> {
     }
 
     fn push_binding(&mut self, index: u32) {
-        #[cfg(feature = "debug-ir")]
         self.tokens.push(format!("L{index}"));
         self.emit_separator();
         self.hasher.update(b"L");
@@ -148,7 +148,6 @@ impl<'a> TokenCollector<'a> {
             self.free_ref_numbers.insert(name.to_string(), idx);
             idx
         };
-        #[cfg(feature = "debug-ir")]
         self.tokens.push(format!("F{index}"));
         self.emit_separator();
         self.hasher.update(b"F");
@@ -156,7 +155,6 @@ impl<'a> TokenCollector<'a> {
     }
 
     fn push_label(&mut self, index: usize) {
-        #[cfg(feature = "debug-ir")]
         self.tokens.push(format!("$L{index}"));
         self.emit_separator();
         self.hasher.update(b"$L");
@@ -211,6 +209,11 @@ impl<'a> TokenCollector<'a> {
         let mut result = [0u8; 32];
         result.copy_from_slice(&digest);
         result
+    }
+
+    pub fn finish_with_canonical(self) -> ([u8; 32], String) {
+        let canonical = self.tokens.join(",");
+        (self.finish(), canonical)
     }
 
     fn is_local_symbol(&self, sym_id: SymbolId) -> bool {
@@ -299,7 +302,9 @@ impl<'a> TokenCollector<'a> {
             Statement::BlockStatement(s) => self.visit_block_statement(s),
             Statement::BreakStatement(s) => self.visit_break_statement(s),
             Statement::ContinueStatement(s) => self.visit_continue_statement(s),
-            Statement::DebuggerStatement(_) => { self.push("DebuggerStatement"); }
+            Statement::DebuggerStatement(_) => {
+                self.push("DebuggerStatement");
+            }
             Statement::DoWhileStatement(s) => self.visit_do_while_statement(s),
             Statement::EmptyStatement(_) => {}
             Statement::ExpressionStatement(s) => self.visit_expression_statement(s),
@@ -865,8 +870,7 @@ impl<'a> TokenCollector<'a> {
                     self.push("SpreadElement");
                     self.visit_expression(&s.argument);
                 }
-                ArrayExpressionElement::Elision(_) => {
-                }
+                ArrayExpressionElement::Elision(_) => {}
                 _ => {
                     if let Some(expr) = element.as_expression() {
                         self.visit_expression(expr);
@@ -886,7 +890,9 @@ impl<'a> TokenCollector<'a> {
             .enumerate()
             .map(|(i, prop)| {
                 let key = match prop {
-                    ObjectPropertyKind::ObjectProperty(p) => self.property_sort_key(&p.key, p.computed),
+                    ObjectPropertyKind::ObjectProperty(p) => {
+                        self.property_sort_key(&p.key, p.computed)
+                    }
                     ObjectPropertyKind::SpreadProperty(_) => String::new(),
                 };
                 (key, i)
@@ -1253,7 +1259,9 @@ impl<'a> TokenCollector<'a> {
         if let Some(decl) = &d.declaration {
             match decl {
                 Declaration::VariableDeclaration(v) => self.visit_variable_declaration(v),
-                Declaration::FunctionDeclaration(f) => self.visit_function(f, "FunctionDeclaration"),
+                Declaration::FunctionDeclaration(f) => {
+                    self.visit_function(f, "FunctionDeclaration")
+                }
                 Declaration::ClassDeclaration(c) => self.visit_class(c, "ClassDeclaration"),
                 _ => {}
             }

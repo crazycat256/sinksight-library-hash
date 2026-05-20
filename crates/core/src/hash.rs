@@ -4,7 +4,9 @@ use oxc_parser::{ParseOptions, Parser};
 use oxc_semantic::SemanticBuilder;
 use oxc_span::SourceType;
 
-use crate::types::{ExtractResult, FunctionHashInfo};
+use crate::types::{
+    DetailedExtractResult, DetailedFunctionHashInfo, ExtractResult, FunctionHashInfo,
+};
 use crate::visitor::{ScopeInfo, TokenCollector};
 
 const HASH_PREFIX: &str = "slh1";
@@ -98,10 +100,7 @@ fn span_position(line_index: &LineIndex, source: &str, span: oxc_span::Span) -> 
     }
 }
 
-fn parse_js<'a>(
-    allocator: &'a Allocator,
-    source: &'a str,
-) -> oxc_parser::ParserReturn<'a> {
+fn parse_js<'a>(allocator: &'a Allocator, source: &'a str) -> oxc_parser::ParserReturn<'a> {
     let source_type = SourceType::unambiguous();
     let options = ParseOptions {
         allow_return_outside_function: true,
@@ -115,6 +114,7 @@ fn parse_js<'a>(
 
 struct RawFunctionInfo {
     hash: [u8; 32],
+    canonical: String,
     span: oxc_span::Span,
     name: Option<String>,
     stmt_count: u32,
@@ -144,7 +144,9 @@ fn count_class_element_units(element: &ClassElement) -> u32 {
         ClassElement::PropertyDefinition(p) => {
             1 + p.value.as_ref().map(count_expression_units).unwrap_or(0)
         }
-        ClassElement::AccessorProperty(p) => 1 + p.value.as_ref().map(count_expression_units).unwrap_or(0),
+        ClassElement::AccessorProperty(p) => {
+            1 + p.value.as_ref().map(count_expression_units).unwrap_or(0)
+        }
         ClassElement::StaticBlock(block) => {
             1 + block.body.iter().map(count_statement_units).sum::<u32>()
         }
@@ -178,7 +180,10 @@ fn count_statement_units(stmt: &Statement) -> u32 {
         Statement::IfStatement(s) => {
             1 + count_expression_units(&s.test)
                 + count_statement_units(&s.consequent)
-                + s.alternate.as_ref().map(|alt| count_statement_units(alt)).unwrap_or(0)
+                + s.alternate
+                    .as_ref()
+                    .map(|alt| count_statement_units(alt))
+                    .unwrap_or(0)
         }
         Statement::ForStatement(s) => {
             1 + s
@@ -203,14 +208,12 @@ fn count_statement_units(stmt: &Statement) -> u32 {
                 + count_statement_units(&s.body)
         }
         Statement::ForInStatement(s) => {
-            1
-                + count_for_statement_left_units(&s.left)
+            1 + count_for_statement_left_units(&s.left)
                 + count_expression_units(&s.right)
                 + count_statement_units(&s.body)
         }
         Statement::ForOfStatement(s) => {
-            1
-                + count_for_statement_left_units(&s.left)
+            1 + count_for_statement_left_units(&s.left)
                 + count_expression_units(&s.right)
                 + count_statement_units(&s.body)
         }
@@ -221,27 +224,40 @@ fn count_statement_units(stmt: &Statement) -> u32 {
             1 + count_statement_units(&s.body) + count_expression_units(&s.test)
         }
         Statement::TryStatement(s) => {
-            1
-                + s.block.body.iter().map(count_statement_units).sum::<u32>()
+            1 + s.block.body.iter().map(count_statement_units).sum::<u32>()
                 + s.handler
                     .as_ref()
                     .map(|handler| {
-                        handler.body.body.iter().map(count_statement_units).sum::<u32>()
+                        handler
+                            .body
+                            .body
+                            .iter()
+                            .map(count_statement_units)
+                            .sum::<u32>()
                     })
                     .unwrap_or(0)
                 + s.finalizer
                     .as_ref()
-                    .map(|finalizer| finalizer.body.iter().map(count_statement_units).sum::<u32>())
+                    .map(|finalizer| {
+                        finalizer
+                            .body
+                            .iter()
+                            .map(count_statement_units)
+                            .sum::<u32>()
+                    })
                     .unwrap_or(0)
         }
         Statement::SwitchStatement(s) => {
-            1
-                + count_expression_units(&s.discriminant)
+            1 + count_expression_units(&s.discriminant)
                 + s.cases
                     .iter()
                     .map(|case| {
                         case.test.as_ref().map(count_expression_units).unwrap_or(0)
-                            + case.consequent.iter().map(count_statement_units).sum::<u32>()
+                            + case
+                                .consequent
+                                .iter()
+                                .map(count_statement_units)
+                                .sum::<u32>()
                     })
                     .sum::<u32>()
         }
@@ -254,7 +270,9 @@ fn count_statement_units(stmt: &Statement) -> u32 {
         Statement::ExportDefaultDeclaration(d) => {
             1 + match &d.declaration {
                 ExportDefaultDeclarationKind::FunctionDeclaration(f) => count_function_units(f),
-                ExportDefaultDeclarationKind::ClassDeclaration(c) => count_class_body_units(&c.body),
+                ExportDefaultDeclarationKind::ClassDeclaration(c) => {
+                    count_class_body_units(&c.body)
+                }
                 _ => d
                     .declaration
                     .as_expression()
@@ -373,7 +391,14 @@ fn count_expression_units(expr: &Expression) -> u32 {
         | Expression::RegExpLiteral(_)
         | Expression::PrivateInExpression(_) => 0,
         Expression::FunctionExpression(f) => 1 + count_function_units(f),
-        Expression::ArrowFunctionExpression(f) => 1 + f.body.statements.iter().map(count_statement_units).sum::<u32>(),
+        Expression::ArrowFunctionExpression(f) => {
+            1 + f
+                .body
+                .statements
+                .iter()
+                .map(count_statement_units)
+                .sum::<u32>()
+        }
         Expression::ClassExpression(c) => 1 + count_class_body_units(&c.body),
         Expression::StaticMemberExpression(m) => 1 + count_expression_units(&m.object),
         Expression::ComputedMemberExpression(m) => {
@@ -398,7 +423,11 @@ fn count_expression_units(expr: &Expression) -> u32 {
             1 + count_assignment_target_units(&e.left) + count_expression_units(&e.right)
         }
         Expression::SequenceExpression(e) => {
-            1 + e.expressions.iter().map(count_expression_units).sum::<u32>()
+            1 + e
+                .expressions
+                .iter()
+                .map(count_expression_units)
+                .sum::<u32>()
         }
         Expression::ConditionalExpression(e) => {
             1 + count_expression_units(&e.test)
@@ -422,7 +451,12 @@ fn count_expression_units(expr: &Expression) -> u32 {
             1 + e
                 .elements
                 .iter()
-                .map(|element| element.as_expression().map(count_expression_units).unwrap_or(0))
+                .map(|element| {
+                    element
+                        .as_expression()
+                        .map(count_expression_units)
+                        .unwrap_or(0)
+                })
                 .sum::<u32>()
         }
         Expression::ObjectExpression(e) => {
@@ -431,16 +465,26 @@ fn count_expression_units(expr: &Expression) -> u32 {
                 .iter()
                 .map(|prop| match prop {
                     ObjectPropertyKind::ObjectProperty(p) => 1 + count_expression_units(&p.value),
-                    ObjectPropertyKind::SpreadProperty(s) => 1 + count_expression_units(&s.argument),
+                    ObjectPropertyKind::SpreadProperty(s) => {
+                        1 + count_expression_units(&s.argument)
+                    }
                 })
                 .sum::<u32>()
         }
         Expression::TemplateLiteral(lit) => {
-            1 + lit.expressions.iter().map(count_expression_units).sum::<u32>()
+            1 + lit
+                .expressions
+                .iter()
+                .map(count_expression_units)
+                .sum::<u32>()
         }
         Expression::TaggedTemplateExpression(e) => {
             1 + count_expression_units(&e.tag)
-                + e.quasi.expressions.iter().map(count_expression_units).sum::<u32>()
+                + e.quasi
+                    .expressions
+                    .iter()
+                    .map(count_expression_units)
+                    .sum::<u32>()
         }
         Expression::ImportExpression(e) => 1 + count_expression_units(&e.source),
         Expression::ChainExpression(e) => 1 + count_chain_element_units(&e.expression),
@@ -487,7 +531,12 @@ pub fn extract_hashes(source: &str, min_statements: Option<u32>) -> Result<Extra
     collector.visit_program(program);
     let file_hash = bytes_to_slh1(&collector.finish());
 
-    let ctx = HashContext { source, scoping, scope_info: &scope_info, min_stmts };
+    let ctx = HashContext {
+        source,
+        scoping,
+        scope_info: &scope_info,
+        min_stmts,
+    };
     let mut raw: Vec<RawFunctionInfo> = Vec::new();
     collect_functions(program, &ctx, &mut raw);
 
@@ -508,7 +557,65 @@ pub fn extract_hashes(source: &str, min_statements: Option<u32>) -> Result<Extra
         })
         .collect();
 
-    Ok(ExtractResult { file_hash, functions })
+    Ok(ExtractResult {
+        file_hash,
+        functions,
+    })
+}
+
+pub fn extract_detailed_hashes(
+    source: &str,
+    min_statements: Option<u32>,
+) -> Result<DetailedExtractResult, String> {
+    let min_stmts = min_statements.unwrap_or(DEFAULT_MIN_STATEMENTS);
+    let allocator = Allocator::default();
+    let parse_ret = parse_js(&allocator, source);
+
+    if parse_ret.panicked {
+        return Err("Parse error: parser panicked".to_string());
+    }
+
+    let program = &parse_ret.program;
+    let sem_ret = SemanticBuilder::new().build(program);
+    let scoping = sem_ret.semantic.scoping();
+
+    let scope_info = ScopeInfo::new(scoping);
+    let mut collector = TokenCollector::for_program(scoping, source, &scope_info);
+    collector.visit_program(program);
+    let (file_hash, file_canonical) = collector.finish_with_canonical();
+
+    let ctx = HashContext {
+        source,
+        scoping,
+        scope_info: &scope_info,
+        min_stmts,
+    };
+    let mut raw: Vec<RawFunctionInfo> = Vec::new();
+    collect_functions(program, &ctx, &mut raw);
+
+    let line_index = LineIndex::new(source);
+    let functions = raw
+        .into_iter()
+        .map(|r| {
+            let pos = span_position(&line_index, source, r.span);
+            DetailedFunctionHashInfo {
+                hash: bytes_to_slh1(&r.hash),
+                canonical: r.canonical,
+                name: r.name,
+                start_line: pos.start_line,
+                start_column: pos.start_column,
+                end_line: pos.end_line,
+                end_column: pos.end_column,
+                stmt_count: r.stmt_count,
+            }
+        })
+        .collect();
+
+    Ok(DetailedExtractResult {
+        file_hash: bytes_to_slh1(&file_hash),
+        file_canonical,
+        functions,
+    })
 }
 
 #[cfg(feature = "debug-ir")]
@@ -530,21 +637,13 @@ pub fn extract_ir(source: &str) -> Result<Vec<String>, String> {
     Ok(collector.tokens)
 }
 
-fn collect_functions(
-    program: &Program,
-    ctx: &HashContext,
-    out: &mut Vec<RawFunctionInfo>,
-) {
+fn collect_functions(program: &Program, ctx: &HashContext, out: &mut Vec<RawFunctionInfo>) {
     for stmt in &program.body {
         collect_from_statement(stmt, ctx, out);
     }
 }
 
-fn collect_from_statement(
-    stmt: &Statement,
-    ctx: &HashContext,
-    out: &mut Vec<RawFunctionInfo>,
-) {
+fn collect_from_statement(stmt: &Statement, ctx: &HashContext, out: &mut Vec<RawFunctionInfo>) {
     match stmt {
         Statement::FunctionDeclaration(f) => {
             try_hash_function(f, ctx, out);
@@ -636,26 +735,24 @@ fn collect_from_statement(
         Statement::ThrowStatement(s) => {
             collect_from_expression(&s.argument, ctx, out);
         }
-        Statement::ExportDefaultDeclaration(d) => {
-            match &d.declaration {
-                ExportDefaultDeclarationKind::FunctionDeclaration(f) => {
-                    try_hash_function(f, ctx, out);
-                    if let Some(body) = &f.body {
-                        for inner in &body.statements {
-                            collect_from_statement(inner, ctx, out);
-                        }
-                    }
-                }
-                ExportDefaultDeclarationKind::ClassDeclaration(c) => {
-                    try_hash_class(c, ctx, out);
-                }
-                _ => {
-                    if let Some(expr) = d.declaration.as_expression() {
-                        collect_from_expression(expr, ctx, out);
+        Statement::ExportDefaultDeclaration(d) => match &d.declaration {
+            ExportDefaultDeclarationKind::FunctionDeclaration(f) => {
+                try_hash_function(f, ctx, out);
+                if let Some(body) = &f.body {
+                    for inner in &body.statements {
+                        collect_from_statement(inner, ctx, out);
                     }
                 }
             }
-        }
+            ExportDefaultDeclarationKind::ClassDeclaration(c) => {
+                try_hash_class(c, ctx, out);
+            }
+            _ => {
+                if let Some(expr) = d.declaration.as_expression() {
+                    collect_from_expression(expr, ctx, out);
+                }
+            }
+        },
         Statement::ExportNamedDeclaration(d) => {
             if let Some(decl) = &d.declaration {
                 match decl {
@@ -685,11 +782,7 @@ fn collect_from_statement(
     }
 }
 
-fn collect_from_expression(
-    expr: &Expression,
-    ctx: &HashContext,
-    out: &mut Vec<RawFunctionInfo>,
-) {
+fn collect_from_expression(expr: &Expression, ctx: &HashContext, out: &mut Vec<RawFunctionInfo>) {
     match expr {
         Expression::FunctionExpression(f) => {
             try_hash_function(f, ctx, out);
@@ -777,11 +870,7 @@ fn collect_from_expression(
     }
 }
 
-fn try_hash_function(
-    f: &Function,
-    ctx: &HashContext,
-    out: &mut Vec<RawFunctionInfo>,
-) {
+fn try_hash_function(f: &Function, ctx: &HashContext, out: &mut Vec<RawFunctionInfo>) {
     let body = match &f.body {
         Some(b) => b,
         None => return,
@@ -796,22 +885,21 @@ fn try_hash_function(
         None => return,
     };
 
-    let mut collector = TokenCollector::for_subtree(ctx.scoping, ctx.source, ctx.scope_info, scope_id);
+    let mut collector =
+        TokenCollector::for_subtree(ctx.scoping, ctx.source, ctx.scope_info, scope_id);
     collector.visit_function_content(f);
+    let (hash, canonical) = collector.finish_with_canonical();
 
     out.push(RawFunctionInfo {
-        hash: collector.finish(),
+        hash,
+        canonical,
         span: f.span,
         name: f.id.as_ref().map(|id| id.name.to_string()),
         stmt_count,
     });
 }
 
-fn try_hash_arrow(
-    f: &ArrowFunctionExpression,
-    ctx: &HashContext,
-    out: &mut Vec<RawFunctionInfo>,
-) {
+fn try_hash_arrow(f: &ArrowFunctionExpression, ctx: &HashContext, out: &mut Vec<RawFunctionInfo>) {
     if f.expression {
         return;
     }
@@ -825,22 +913,21 @@ fn try_hash_arrow(
         None => return,
     };
 
-    let mut collector = TokenCollector::for_subtree(ctx.scoping, ctx.source, ctx.scope_info, scope_id);
+    let mut collector =
+        TokenCollector::for_subtree(ctx.scoping, ctx.source, ctx.scope_info, scope_id);
     collector.visit_arrow_function_content(f);
+    let (hash, canonical) = collector.finish_with_canonical();
 
     out.push(RawFunctionInfo {
-        hash: collector.finish(),
+        hash,
+        canonical,
         span: f.span,
         name: None,
         stmt_count,
     });
 }
 
-fn try_hash_class(
-    c: &Class,
-    ctx: &HashContext,
-    out: &mut Vec<RawFunctionInfo>,
-) {
+fn try_hash_class(c: &Class, ctx: &HashContext, out: &mut Vec<RawFunctionInfo>) {
     let stmt_count = c.body.body.len() as u32;
     let structural_units = count_class_body_units(&c.body);
     if !meets_min_complexity(stmt_count, structural_units, ctx.min_stmts) {
@@ -851,11 +938,14 @@ fn try_hash_class(
         None => return,
     };
 
-    let mut collector = TokenCollector::for_subtree(ctx.scoping, ctx.source, ctx.scope_info, scope_id);
+    let mut collector =
+        TokenCollector::for_subtree(ctx.scoping, ctx.source, ctx.scope_info, scope_id);
     collector.visit_class_content(c);
+    let (hash, canonical) = collector.finish_with_canonical();
 
     out.push(RawFunctionInfo {
-        hash: collector.finish(),
+        hash,
+        canonical,
         span: c.span,
         name: c.id.as_ref().map(|id| id.name.to_string()),
         stmt_count,
@@ -900,7 +990,12 @@ pub fn analyze_for_check(source: &str, min_stmts: u32) -> Option<CheckAnalysis> 
     collector.visit_program(&parse_ret.program);
     let file_hash = collector.finish();
 
-    let ctx = HashContext { source, scoping, scope_info: &scope_info, min_stmts };
+    let ctx = HashContext {
+        source,
+        scoping,
+        scope_info: &scope_info,
+        min_stmts,
+    };
     let mut raw: Vec<RawFunctionInfo> = Vec::new();
     collect_functions(&parse_ret.program, &ctx, &mut raw);
 
@@ -918,6 +1013,8 @@ pub fn analyze_for_check(source: &str, min_stmts: u32) -> Option<CheckAnalysis> 
         })
         .collect();
 
-    Some(CheckAnalysis { file_hash, functions })
+    Some(CheckAnalysis {
+        file_hash,
+        functions,
+    })
 }
-

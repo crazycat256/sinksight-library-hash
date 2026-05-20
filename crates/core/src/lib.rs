@@ -25,12 +25,19 @@ pub mod types;
 pub(crate) mod visitor;
 
 pub use types::{
-    CheckResult, DbContents, DbHashRecord, ExtractResult, FunctionHashInfo, FunctionMatch, LibInfo,
-    LibraryMatch,
+    CheckResult, DbContents, DbHashRecord, DetailedExtractResult, DetailedFunctionHashInfo,
+    ExtractResult, FunctionHashInfo, FunctionMatch, LibInfo, LibraryMatch,
 };
 
 pub fn extract_hashes(script: &str, min_statements: Option<u32>) -> Result<ExtractResult, String> {
     hash::extract_hashes(script, min_statements)
+}
+
+pub fn extract_detailed_hashes(
+    script: &str,
+    min_statements: Option<u32>,
+) -> Result<DetailedExtractResult, String> {
+    hash::extract_detailed_hashes(script, min_statements)
 }
 
 pub struct LoadedDb {
