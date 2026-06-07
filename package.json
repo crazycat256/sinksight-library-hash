@@ -1,6 +1,6 @@
 {
   "name": "@sinksight/library-hash",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "AST-based JavaScript library fingerprinting (slh1 hashes)",
   "scripts": {
     "build": "wasm-pack build crates/wasm --target nodejs",

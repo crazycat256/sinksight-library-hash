@@ -79,6 +79,7 @@ jobs:
           rm -rf wasm-package-branch
           mkdir -p wasm-package-branch/crates/wasm
           cp -R crates/wasm/pkg wasm-package-branch/crates/wasm/pkg
+          rm -f wasm-package-branch/crates/wasm/pkg/.gitignore
           node -e "
             const fs = require('fs');
             const root = JSON.parse(fs.readFileSync('package.json', 'utf-8'));
@@ -90,6 +91,9 @@ jobs:
             fs.writeFileSync(path, JSON.stringify(pkg, null, 2) + '\n');
           "
           cp LICENSE wasm-package-branch/crates/wasm/pkg/
+          test -f wasm-package-branch/crates/wasm/pkg/package.json
+          test -f wasm-package-branch/crates/wasm/pkg/sinksight_library_hash.js
+          test -f wasm-package-branch/crates/wasm/pkg/sinksight_library_hash_bg.wasm
 
       - name: Publish prebuilt WASM branch
         if: steps.wasm_branch.outputs.current == 'false'
