@@ -35,7 +35,9 @@ jobs:
           published_version=""
           if git ls-remote --exit-code --heads origin wasm-package >/dev/null 2>&1; then
             git fetch origin wasm-package --depth=1
-            published_version="$(git show FETCH_HEAD:crates/wasm/pkg/package.json 2>/dev/null | node -e "let input=''; process.stdin.on('data', chunk => input += chunk); process.stdin.on('end', () => { try { console.log(JSON.parse(input).version || ''); } catch { console.log(''); } });")"
+            if git show FETCH_HEAD:crates/wasm/pkg/package.json > published-package.json 2>/dev/null; then
+              published_version="$(node -p "require('./published-package.json').version || ''")"
+            fi
           fi
           echo "published_version=$published_version" >> $GITHUB_OUTPUT
           if [ "$published_version" = "${{ steps.version.outputs.value }}" ]; then
