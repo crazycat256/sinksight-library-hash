@@ -8,7 +8,7 @@ jobs:
   publish:
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: write
     steps:
       - uses: actions/checkout@v4
 
@@ -26,6 +26,22 @@ jobs:
             echo "already_published=true" >> $GITHUB_OUTPUT
           else
             echo "already_published=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Check prebuilt WASM branch version
+        id: wasm_branch
+        run: |
+          set -euo pipefail
+          published_version=""
+          if git ls-remote --exit-code --heads origin wasm-package >/dev/null 2>&1; then
+            git fetch origin wasm-package --depth=1
+            published_version="$(git show FETCH_HEAD:crates/wasm/pkg/package.json 2>/dev/null | node -e "let input=''; process.stdin.on('data', chunk => input += chunk); process.stdin.on('end', () => { try { console.log(JSON.parse(input).version || ''); } catch { console.log(''); } });")"
+          fi
+          echo "published_version=$published_version" >> $GITHUB_OUTPUT
+          if [ "$published_version" = "${{ steps.version.outputs.value }}" ]; then
+            echo "current=true" >> $GITHUB_OUTPUT
+          else
+            echo "current=false" >> $GITHUB_OUTPUT
           fi
 
       - uses: actions-rust-lang/setup-rust-toolchain@v1
@@ -55,6 +71,35 @@ jobs:
 
       - name: JS tests
         run: npm test
+
+      - name: Prepare prebuilt WASM branch payload
+        if: steps.wasm_branch.outputs.current == 'false'
+        run: |
+          set -euo pipefail
+          rm -rf wasm-package-branch
+          mkdir -p wasm-package-branch/crates/wasm
+          cp -R crates/wasm/pkg wasm-package-branch/crates/wasm/pkg
+          node -e "
+            const fs = require('fs');
+            const root = JSON.parse(fs.readFileSync('package.json', 'utf-8'));
+            const path = 'wasm-package-branch/crates/wasm/pkg/package.json';
+            const pkg = JSON.parse(fs.readFileSync(path, 'utf-8'));
+            pkg.name = 'sinksight-library-hash-wasm';
+            pkg.version = root.version;
+            pkg.repository = root.repository;
+            fs.writeFileSync(path, JSON.stringify(pkg, null, 2) + '\n');
+          "
+          cp LICENSE wasm-package-branch/crates/wasm/pkg/
+
+      - name: Publish prebuilt WASM branch
+        if: steps.wasm_branch.outputs.current == 'false'
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_branch: wasm-package
+          publish_dir: wasm-package-branch
+          force_orphan: true
+          commit_message: Publish prebuilt WASM package ${{ steps.version.outputs.value }}
 
       - name: Publish
         if: steps.version.outputs.already_published == 'false'
