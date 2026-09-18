@@ -137,11 +137,10 @@ dist
 
 /target
 
-# napi – generated at build time
+# napi - generated at build time
 *.node
 crates/napi/index.js
 crates/napi/index.d.ts
-crates/napi/package-lock.json
 
 # wasm-pack output
 crates/wasm/pkg/

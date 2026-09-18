@@ -1,4 +1,4 @@
-name: Publish
+name: Publish prebuilt WASM to GitHub
 
 on:
   push:
@@ -6,6 +6,9 @@ on:
 
 jobs:
   publish:
+    concurrency:
+      group: wasm-package
+      cancel-in-progress: false
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -15,42 +18,21 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-          registry-url: https://registry.npmjs.org
 
-      - name: Check if version already published
+      - name: Read package version
         id: version
         run: |
           VERSION=$(node -p "require('./package.json').version")
           echo "value=$VERSION" >> $GITHUB_OUTPUT
-          if npm view @sinksight/library-hash@$VERSION version 2>/dev/null | grep -q "$VERSION"; then
-            echo "already_published=true" >> $GITHUB_OUTPUT
-          else
-            echo "already_published=false" >> $GITHUB_OUTPUT
-          fi
-
-      - name: Check prebuilt WASM branch version
-        id: wasm_branch
-        run: |
-          set -euo pipefail
-          published_version=""
-          if git ls-remote --exit-code --heads origin wasm-package >/dev/null 2>&1; then
-            git fetch origin wasm-package --depth=1
-            if git show FETCH_HEAD:crates/wasm/pkg/package.json > published-package.json 2>/dev/null; then
-              published_version="$(node -p "require('./published-package.json').version || ''")"
-            fi
-          fi
-          echo "published_version=$published_version" >> $GITHUB_OUTPUT
-          if [ "$published_version" = "${{ steps.version.outputs.value }}" ]; then
-            echo "current=true" >> $GITHUB_OUTPUT
-          else
-            echo "current=false" >> $GITHUB_OUTPUT
-          fi
 
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           target: wasm32-unknown-unknown
 
       - uses: jetli/wasm-pack-action@v0.4.0
+
+      - name: Rust tests
+        run: cargo test --workspace
 
       - name: Build WASM
         run: wasm-pack build crates/wasm --target nodejs
@@ -75,30 +57,28 @@ jobs:
         run: npm test
 
       - name: Prepare prebuilt WASM branch payload
-        if: steps.wasm_branch.outputs.current == 'false'
         run: |
           set -euo pipefail
           rm -rf wasm-package-branch
-          mkdir -p wasm-package-branch/crates/wasm
-          cp -R crates/wasm/pkg wasm-package-branch/crates/wasm/pkg
-          rm -f wasm-package-branch/crates/wasm/pkg/.gitignore
+          mkdir -p wasm-package-branch
+          cp -R crates/wasm/pkg/. wasm-package-branch/
+          rm -f wasm-package-branch/.gitignore
           node -e "
             const fs = require('fs');
             const root = JSON.parse(fs.readFileSync('package.json', 'utf-8'));
-            const path = 'wasm-package-branch/crates/wasm/pkg/package.json';
+            const path = 'wasm-package-branch/package.json';
             const pkg = JSON.parse(fs.readFileSync(path, 'utf-8'));
-            pkg.name = 'sinksight-library-hash-wasm';
+            pkg.name = root.name;
             pkg.version = root.version;
             pkg.repository = root.repository;
             fs.writeFileSync(path, JSON.stringify(pkg, null, 2) + '\n');
           "
-          cp LICENSE wasm-package-branch/crates/wasm/pkg/
-          test -f wasm-package-branch/crates/wasm/pkg/package.json
-          test -f wasm-package-branch/crates/wasm/pkg/sinksight_library_hash.js
-          test -f wasm-package-branch/crates/wasm/pkg/sinksight_library_hash_bg.wasm
+          cp LICENSE README.md wasm-package-branch/
+          test -f wasm-package-branch/package.json
+          test -f wasm-package-branch/sinksight_library_hash.js
+          test -f wasm-package-branch/sinksight_library_hash_bg.wasm
 
       - name: Publish prebuilt WASM branch
-        if: steps.wasm_branch.outputs.current == 'false'
         uses: peaceiris/actions-gh-pages@v4
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
@@ -106,10 +86,3 @@ jobs:
           publish_dir: wasm-package-branch
           force_orphan: true
           commit_message: Publish prebuilt WASM package ${{ steps.version.outputs.value }}
-
-      - name: Publish
-        if: steps.version.outputs.already_published == 'false'
-        run: npm publish --access public
-        working-directory: crates/wasm/pkg
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

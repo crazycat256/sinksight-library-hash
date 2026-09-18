@@ -679,12 +679,10 @@ fn collect_from_statement(stmt: &Statement, ctx: &HashContext, out: &mut Vec<Raw
             }
         }
         Statement::ForStatement(s) => {
-            if let Some(init) = &s.init {
-                if let ForStatementInit::VariableDeclaration(d) = init {
-                    for decl in &d.declarations {
-                        if let Some(init_expr) = &decl.init {
-                            collect_from_expression(init_expr, ctx, out);
-                        }
+            if let Some(ForStatementInit::VariableDeclaration(d)) = &s.init {
+                for decl in &d.declarations {
+                    if let Some(init_expr) = &decl.init {
+                        collect_from_expression(init_expr, ctx, out);
                     }
                 }
             }

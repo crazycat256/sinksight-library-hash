@@ -43,7 +43,7 @@ export async function fetchLib(lib, version, file, sri) {
     const buf = readFileSync(cachePath);
     if (!verifySri(buf, sri)) {
       throw new Error(
-        `SRI mismatch for cached ${cacheKey} — cache may be corrupted`
+        `SRI mismatch for cached ${cacheKey} - cache may be corrupted`
       );
     }
     return buf.toString("utf-8");
@@ -58,7 +58,7 @@ export async function fetchLib(lib, version, file, sri) {
 
   if (!verifySri(buf, sri)) {
     throw new Error(
-      `SRI mismatch for ${url} — expected ${sri}`
+      `SRI mismatch for ${url} - expected ${sri}`
     );
   }
 
@@ -83,7 +83,7 @@ export async function fetchUrl(url, sri) {
   if (existsSync(cachePath)) {
     const buf = readFileSync(cachePath);
     if (!verifySri(buf, sri)) {
-      throw new Error(`SRI mismatch for cached ${url} — cache may be corrupted`);
+      throw new Error(`SRI mismatch for cached ${url} - cache may be corrupted`);
     }
     return buf.toString("utf-8");
   }
@@ -95,7 +95,7 @@ export async function fetchUrl(url, sri) {
   const buf = Buffer.from(await res.arrayBuffer());
 
   if (!verifySri(buf, sri)) {
-    throw new Error(`SRI mismatch for ${url} — expected ${sri}`);
+    throw new Error(`SRI mismatch for ${url} - expected ${sri}`);
   }
 
   writeFileSync(cachePath, buf);

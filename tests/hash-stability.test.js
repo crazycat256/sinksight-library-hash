@@ -1,5 +1,5 @@
 /**
- * Hash stability tests — verify that SLH hashes are invariant to
+ * Hash stability tests - verify that SLH hashes are invariant to
  * whitespace removal, comment stripping, and variable renaming.
  *
  * For each library we download the original source from cdnjs (SRI-verified),
@@ -98,7 +98,7 @@ describe("variable renaming invariance", () => {
   });
 });
 
-describe("function hash invariance — name and type", () => {
+describe("function hash invariance - name and type", () => {
   it("renaming a FunctionDeclaration id does not change the function hash", () => {
     const a = extractHashes("function foo(x, y) { var z = x + y; return z; }", 1);
     const b = extractHashes("function bar(x, y) { var z = x + y; return z; }", 1);

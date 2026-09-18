@@ -1,16 +1,19 @@
 [package]
 name = "sinksight-library-hash-wasm"
-version = "0.1.0"
+version = "0.1.3"
 edition = "2021"
 description = "WebAssembly bindings for sinksight-library-hash."
-license = "GPL-3.0"
+license-file = "../../LICENSE"
+repository = "https://github.com/crazycat256/sinksight-library-hash"
+homepage = "https://github.com/crazycat256/sinksight-library-hash"
+readme = "../../README.md"
 
 [lib]
 name = "sinksight_library_hash"
 crate-type = ["cdylib"]
 
 [dependencies]
-sinksight-library-hash = { path = "../core" }
+sinksight-library-hash = { version = "0.1.3", path = "../core" }
 js-sys = "0.3.92"
 serde = { version = "1", features = ["derive"] }
 serde-wasm-bindgen = "0.6"
@@ -22,4 +25,3 @@ debug-ir = ["sinksight-library-hash/debug-ir"]
 
 [dev-dependencies]
 wasm-bindgen-test = "0.3"
-

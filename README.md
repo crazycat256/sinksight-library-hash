@@ -8,9 +8,9 @@ Produces deterministic hashes (`slh1`) for JS files and their individual functio
 
 ```
 crates/
-  core/   ← Pure Rust library (rlib) — all logic lives here
-  wasm/   ← WebAssembly bindings (wasm-bindgen)  → npm: @sinksight/library-hash
-  napi/   ← Native Node.js bindings (napi-rs)    → npm: @sinksight/library-hash-native
+  core/   <- Pure Rust library (rlib) - all logic lives here
+  wasm/   <- WebAssembly bindings (wasm-bindgen), prebuilt on the wasm-package branch
+  napi/   <- Native Node.js bindings (napi-rs), built locally
 ```
 
 All three targets expose the same API surface.
@@ -153,15 +153,18 @@ cargo run -p sinksight-library-hash --bin slh -- check path/to/library.slhdb pat
 
 ---
 
-## JavaScript — WebAssembly (`@sinksight/library-hash`)
+## JavaScript - WebAssembly (`@sinksight/library-hash`)
 
 The WASM build is optimized for size (`opt-level = "z"`). Best suited for browser extensions and environments where a native addon cannot be used.
 
 ### Install
 
 ```bash
-npm install @sinksight/library-hash
+npm install github:crazycat256/sinksight-library-hash#wasm-package
 ```
+
+The package is currently distributed from the repository's `wasm-package`
+branch and is not published to npm.
 
 ### API
 
@@ -200,7 +203,7 @@ npm run build
 
 ---
 
-## JavaScript — Native addon (`@sinksight/library-hash-native`)
+## JavaScript - Native addon (`@sinksight/library-hash-native`)
 
 The NAPI build is optimized for speed (`opt-level = 3`). Used by [sinksight-library-db](https://github.com/crazycat256/sinksight-library-db) for batch hashing. Provides full TypeScript types out of the box.
 
@@ -213,7 +216,7 @@ npm install --save file:path/to/sinksight-library-hash/crates/napi
 
 ### API
 
-Same functions as the WASM target, with the same signatures. Strongly typed — no `any` returns.
+Same functions as the WASM target, with the same signatures. Strongly typed - no `any` returns.
 
 ```js
 import { extractHashes, loadDb, checkScript, freeDb } from "@sinksight/library-hash-native";
@@ -237,7 +240,7 @@ npm ci && npm run build
 # Rust unit tests
 cargo test
 
-# JS integration tests (fast — synthetic + minification stability on jQuery/Lodash/Moment)
+# JS integration tests (fast - synthetic + minification stability on jQuery/Lodash/Moment)
 npm run test:fast
 
 # Full test suite (includes golden hash checks on 15 real-world libraries)

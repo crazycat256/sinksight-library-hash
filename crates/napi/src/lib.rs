@@ -50,7 +50,7 @@ impl From<FunctionHashInfo> for JsFunctionHashInfo {
 pub fn extract_hashes(script: String, min_statements: Option<u32>) -> Result<JsExtractResult> {
     slh::extract_hashes(&script, min_statements)
         .map(Into::into)
-        .map_err(|e| Error::from_reason(e))
+        .map_err(Error::from_reason)
 }
 
 /// Parse an `slh1-<hex>` hash string into its raw 32-byte digest.
@@ -76,7 +76,7 @@ pub struct JsHashEntry {
 /// Build a binary `.slhdb` database from structured hash data.
 ///
 /// Hash strings must be in `slh1-<hex>` format. They are parsed and validated
-/// internally — no manual binary packing required on the JS side.
+/// internally - no manual binary packing required on the JS side.
 #[napi(js_name = "buildDb")]
 pub fn build_db(
     min_statements: u8,
@@ -100,8 +100,8 @@ pub fn build_db(
             .collect()
     };
 
-    let file = parse_entries(file_hashes, "file_hashes").map_err(|e| Error::from_reason(e))?;
-    let func = parse_entries(func_hashes, "func_hashes").map_err(|e| Error::from_reason(e))?;
+    let file = parse_entries(file_hashes, "file_hashes").map_err(Error::from_reason)?;
+    let func = parse_entries(func_hashes, "func_hashes").map_err(Error::from_reason)?;
 
     let db =
         slh::db::try_build_db(min_statements, &libs_vec, file, func).map_err(Error::from_reason)?;
@@ -112,7 +112,7 @@ pub fn build_db(
 /// Returns an opaque handle for use with `checkScript` / `freeDb` / `listLibs`.
 #[napi(js_name = "loadDb")]
 pub fn load_db(data: Buffer) -> Result<u32> {
-    slh::load_db(&data).map_err(|e| Error::from_reason(e))
+    slh::load_db(&data).map_err(Error::from_reason)
 }
 
 #[napi(object)]
@@ -247,5 +247,5 @@ pub fn list_libs(db_handle: u32) -> Option<Vec<JsLibInfo>> {
 /// Return the normalized token stream (IR) for a script. Debug/development only.
 #[napi(js_name = "extractIR")]
 pub fn extract_ir(script: String) -> Result<Vec<String>> {
-    slh::hash::extract_ir(&script).map_err(|e| Error::from_reason(e))
+    slh::hash::extract_ir(&script).map_err(Error::from_reason)
 }

@@ -76,7 +76,7 @@ impl BloomFilter {
             return Self::empty();
         }
         let hash_count: u8 = 7;
-        let m_bytes = ((hashes.len() as u64 * 10 + 7) / 8).max(1) as usize;
+        let m_bytes = (hashes.len() as u64 * 10).div_ceil(8).max(1) as usize;
         let mut data = vec![0u8; m_bytes];
         let m_bits = m_bytes as u64 * 8;
         for (hash, _, _) in hashes {
@@ -381,8 +381,8 @@ pub fn try_build_db(
 ) -> Result<Vec<u8>, String> {
     validate_build_inputs(libs, &file_hashes, &func_hashes)?;
 
-    file_hashes.sort_by(|a, b| a.0.cmp(&b.0));
-    func_hashes.sort_by(|a, b| a.0.cmp(&b.0));
+    file_hashes.sort_by_key(|entry| entry.0);
+    func_hashes.sort_by_key(|entry| entry.0);
 
     let mut buf = Vec::new();
 

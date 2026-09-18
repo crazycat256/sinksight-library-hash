@@ -1,4 +1,4 @@
-//! `sinksight-library-hash` — AST-based JavaScript library fingerprinting.
+//! `sinksight-library-hash` - AST-based JavaScript library fingerprinting.
 //!
 //! Produces deterministic [`slh1`](https://github.com/crazycat256/sinksight-library-hash)
 //! hashes for JS files and their individual functions. Hashes are stable across

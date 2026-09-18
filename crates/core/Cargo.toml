@@ -1,9 +1,13 @@
 [package]
 name = "sinksight-library-hash"
-version = "0.1.0"
+version = "0.1.3"
 edition = "2021"
 description = "AST-based JavaScript library fingerprinting (slh1 hashes)."
-license = "GPL-3.0"
+license-file = "../../LICENSE"
+repository = "https://github.com/crazycat256/sinksight-library-hash"
+homepage = "https://github.com/crazycat256/sinksight-library-hash"
+documentation = "https://docs.rs/sinksight-library-hash"
+readme = "../../README.md"
 
 [[bin]]
 name = "slh"

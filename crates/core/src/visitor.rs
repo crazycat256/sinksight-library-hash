@@ -1107,10 +1107,8 @@ impl<'a> TokenCollector<'a> {
             }
             BindingPattern::ArrayPattern(p) => {
                 self.push("ArrayPattern");
-                for element in &p.elements {
-                    if let Some(pat) = element {
-                        self.visit_binding_pattern(pat);
-                    }
+                for pat in p.elements.iter().flatten() {
+                    self.visit_binding_pattern(pat);
                 }
                 if let Some(rest) = &p.rest {
                     self.visit_binding_rest_element(rest);
@@ -1169,10 +1167,8 @@ impl<'a> TokenCollector<'a> {
             }
             AssignmentTarget::ArrayAssignmentTarget(a) => {
                 self.push("ArrayPattern");
-                for element in &a.elements {
-                    if let Some(el) = element {
-                        self.visit_assignment_target_maybe_default(el);
-                    }
+                for el in a.elements.iter().flatten() {
+                    self.visit_assignment_target_maybe_default(el);
                 }
                 if let Some(rest) = &a.rest {
                     self.push("RestElement");
