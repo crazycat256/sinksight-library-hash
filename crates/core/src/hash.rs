@@ -679,12 +679,26 @@ fn collect_from_statement(stmt: &Statement, ctx: &HashContext, out: &mut Vec<Raw
             }
         }
         Statement::ForStatement(s) => {
-            if let Some(ForStatementInit::VariableDeclaration(d)) = &s.init {
-                for decl in &d.declarations {
-                    if let Some(init_expr) = &decl.init {
-                        collect_from_expression(init_expr, ctx, out);
+            match &s.init {
+                Some(ForStatementInit::VariableDeclaration(d)) => {
+                    for decl in &d.declarations {
+                        if let Some(init_expr) = &decl.init {
+                            collect_from_expression(init_expr, ctx, out);
+                        }
                     }
                 }
+                Some(init) => {
+                    if let Some(expr) = init.as_expression() {
+                        collect_from_expression(expr, ctx, out);
+                    }
+                }
+                None => {}
+            }
+            if let Some(test) = &s.test {
+                collect_from_expression(test, ctx, out);
+            }
+            if let Some(update) = &s.update {
+                collect_from_expression(update, ctx, out);
             }
             collect_from_statement(&s.body, ctx, out);
         }
@@ -695,9 +709,11 @@ fn collect_from_statement(stmt: &Statement, ctx: &HashContext, out: &mut Vec<Raw
             collect_from_statement(&s.body, ctx, out);
         }
         Statement::ForInStatement(s) => {
+            collect_from_expression(&s.right, ctx, out);
             collect_from_statement(&s.body, ctx, out);
         }
         Statement::ForOfStatement(s) => {
+            collect_from_expression(&s.right, ctx, out);
             collect_from_statement(&s.body, ctx, out);
         }
         Statement::TryStatement(s) => {
@@ -839,12 +855,28 @@ fn collect_from_expression(expr: &Expression, ctx: &HashContext, out: &mut Vec<R
             }
         }
         Expression::ConditionalExpression(e) => {
+            collect_from_expression(&e.test, ctx, out);
             collect_from_expression(&e.consequent, ctx, out);
             collect_from_expression(&e.alternate, ctx, out);
         }
         Expression::LogicalExpression(e) => {
             collect_from_expression(&e.left, ctx, out);
             collect_from_expression(&e.right, ctx, out);
+        }
+        Expression::BinaryExpression(e) => {
+            collect_from_expression(&e.left, ctx, out);
+            collect_from_expression(&e.right, ctx, out);
+        }
+        Expression::UnaryExpression(e) => {
+            collect_from_expression(&e.argument, ctx, out);
+        }
+        Expression::AwaitExpression(e) => {
+            collect_from_expression(&e.argument, ctx, out);
+        }
+        Expression::YieldExpression(e) => {
+            if let Some(arg) = &e.argument {
+                collect_from_expression(arg, ctx, out);
+            }
         }
         Expression::ParenthesizedExpression(e) => {
             collect_from_expression(&e.expression, ctx, out);
@@ -863,6 +895,51 @@ fn collect_from_expression(expr: &Expression, ctx: &HashContext, out: &mut Vec<R
                     collect_from_expression(a_expr, ctx, out);
                 }
             }
+        }
+        Expression::StaticMemberExpression(e) => {
+            collect_from_expression(&e.object, ctx, out);
+        }
+        Expression::ComputedMemberExpression(e) => {
+            collect_from_expression(&e.object, ctx, out);
+            collect_from_expression(&e.expression, ctx, out);
+        }
+        Expression::PrivateFieldExpression(e) => {
+            collect_from_expression(&e.object, ctx, out);
+        }
+        Expression::ChainExpression(e) => match &e.expression {
+            ChainElement::CallExpression(call) => {
+                collect_from_expression(&call.callee, ctx, out);
+                for arg in &call.arguments {
+                    if let Some(a_expr) = arg.as_expression() {
+                        collect_from_expression(a_expr, ctx, out);
+                    }
+                }
+            }
+            ChainElement::StaticMemberExpression(m) => {
+                collect_from_expression(&m.object, ctx, out);
+            }
+            ChainElement::ComputedMemberExpression(m) => {
+                collect_from_expression(&m.object, ctx, out);
+                collect_from_expression(&m.expression, ctx, out);
+            }
+            ChainElement::PrivateFieldExpression(m) => {
+                collect_from_expression(&m.object, ctx, out);
+            }
+            _ => {}
+        },
+        Expression::TemplateLiteral(lit) => {
+            for inner in &lit.expressions {
+                collect_from_expression(inner, ctx, out);
+            }
+        }
+        Expression::TaggedTemplateExpression(e) => {
+            collect_from_expression(&e.tag, ctx, out);
+            for inner in &e.quasi.expressions {
+                collect_from_expression(inner, ctx, out);
+            }
+        }
+        Expression::ImportExpression(e) => {
+            collect_from_expression(&e.source, ctx, out);
         }
         _ => {}
     }

@@ -362,4 +362,32 @@ mod tests {
         let extract = hash::extract_hashes(script, Some(3)).unwrap();
         assert!(extract.functions.is_empty());
     }
+
+    #[test]
+    fn test_call_this_umd_wrapper_extracts_inner_function() {
+        let script = "(function(){ function inner(a){ var b=a+1; var c=b+2; return c; } }).call(this);";
+        let extract = extract_hashes(script, Some(1)).unwrap();
+        assert!(
+            extract
+                .functions
+                .iter()
+                .any(|f| f.name.as_deref() == Some("inner")),
+            "expected inner function inside .call(this) UMD wrapper, got {:?}",
+            extract.functions.iter().map(|f| f.name.clone()).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn test_bang_iife_extracts_inner_function() {
+        let script = "!function(){ function inner(a){ var b=a+1; var c=b+2; return c; } }();";
+        let extract = extract_hashes(script, Some(1)).unwrap();
+        assert!(
+            extract
+                .functions
+                .iter()
+                .any(|f| f.name.as_deref() == Some("inner")),
+            "expected inner function inside !function IIFE, got {:?}",
+            extract.functions.iter().map(|f| f.name.clone()).collect::<Vec<_>>()
+        );
+    }
 }
