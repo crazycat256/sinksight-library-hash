@@ -134,6 +134,16 @@ fn count_function_body_units(body: &FunctionBody) -> u32 {
     body.statements.iter().map(count_statement_units).sum()
 }
 
+fn count_arrow_body_units(body: &ArrowFunctionBody) -> u32 {
+    match body {
+        ArrowFunctionBody::FunctionBody(body) => count_function_body_units(body),
+        _ => body
+            .as_expression()
+            .map(count_expression_units)
+            .unwrap_or(0),
+    }
+}
+
 fn count_class_body_units(body: &ClassBody) -> u32 {
     body.body.iter().map(count_class_element_units).sum()
 }
@@ -280,24 +290,21 @@ fn count_statement_units(stmt: &Statement) -> u32 {
                     .unwrap_or(0),
             }
         }
-        Statement::ExportNamedDeclaration(d) => {
-            1 + d
-                .declaration
-                .as_ref()
-                .map(|decl| match decl {
-                    Declaration::FunctionDeclaration(f) => count_function_units(f),
-                    Declaration::ClassDeclaration(c) => count_class_body_units(&c.body),
-                    Declaration::VariableDeclaration(v) => {
-                        1 + v
-                            .declarations
-                            .iter()
-                            .map(|decl| decl.init.as_ref().map(count_expression_units).unwrap_or(0))
-                            .sum::<u32>()
-                    }
-                    _ => 1,
-                })
-                .unwrap_or(0)
+        Statement::ExportDeclaration(d) => {
+            1 + match &d.declaration {
+                Declaration::FunctionDeclaration(f) => count_function_units(f),
+                Declaration::ClassDeclaration(c) => count_class_body_units(&c.body),
+                Declaration::VariableDeclaration(v) => {
+                    1 + v
+                        .declarations
+                        .iter()
+                        .map(|decl| decl.init.as_ref().map(count_expression_units).unwrap_or(0))
+                        .sum::<u32>()
+                }
+                _ => 1,
+            }
         }
+        Statement::ExportNamedDeclaration(_) | Statement::ExportFromDeclaration(_) => 1,
         Statement::ExportAllDeclaration(_) => 1,
         Statement::ImportDeclaration(_) => 1,
         _ => 1,
@@ -391,14 +398,7 @@ fn count_expression_units(expr: &Expression) -> u32 {
         | Expression::RegExpLiteral(_)
         | Expression::PrivateInExpression(_) => 0,
         Expression::FunctionExpression(f) => 1 + count_function_units(f),
-        Expression::ArrowFunctionExpression(f) => {
-            1 + f
-                .body
-                .statements
-                .iter()
-                .map(count_statement_units)
-                .sum::<u32>()
-        }
+        Expression::ArrowFunctionExpression(f) => 1 + count_arrow_body_units(&f.body),
         Expression::ClassExpression(c) => 1 + count_class_body_units(&c.body),
         Expression::StaticMemberExpression(m) => 1 + count_expression_units(&m.object),
         Expression::ComputedMemberExpression(m) => {
@@ -488,7 +488,7 @@ fn count_expression_units(expr: &Expression) -> u32 {
         }
         Expression::ImportExpression(e) => 1 + count_expression_units(&e.source),
         Expression::ChainExpression(e) => 1 + count_chain_element_units(&e.expression),
-        Expression::MetaProperty(_) => 1,
+        Expression::ImportMeta(_) | Expression::NewTarget(_) => 1,
         Expression::JSXElement(_) | Expression::JSXFragment(_) => 1,
         _ => 1,
     }
@@ -518,7 +518,7 @@ pub fn extract_hashes(source: &str, min_statements: Option<u32>) -> Result<Extra
     let allocator = Allocator::default();
     let parse_ret = parse_js(&allocator, source);
 
-    if parse_ret.panicked {
+    if parse_ret.fatal_error {
         return Err("Parse error: parser panicked".to_string());
     }
 
@@ -571,7 +571,7 @@ pub fn extract_detailed_hashes(
     let allocator = Allocator::default();
     let parse_ret = parse_js(&allocator, source);
 
-    if parse_ret.panicked {
+    if parse_ret.fatal_error {
         return Err("Parse error: parser panicked".to_string());
     }
 
@@ -623,7 +623,7 @@ pub fn extract_ir(source: &str) -> Result<Vec<String>, String> {
     let allocator = Allocator::default();
     let parse_ret = parse_js(&allocator, source);
 
-    if parse_ret.panicked {
+    if parse_ret.fatal_error {
         return Err("Parse error: parser panicked".to_string());
     }
 
@@ -767,31 +767,27 @@ fn collect_from_statement(stmt: &Statement, ctx: &HashContext, out: &mut Vec<Raw
                 }
             }
         },
-        Statement::ExportNamedDeclaration(d) => {
-            if let Some(decl) = &d.declaration {
-                match decl {
-                    Declaration::FunctionDeclaration(f) => {
-                        try_hash_function(f, ctx, out);
-                        if let Some(body) = &f.body {
-                            for inner in &body.statements {
-                                collect_from_statement(inner, ctx, out);
-                            }
-                        }
+        Statement::ExportDeclaration(d) => match &d.declaration {
+            Declaration::FunctionDeclaration(f) => {
+                try_hash_function(f, ctx, out);
+                if let Some(body) = &f.body {
+                    for inner in &body.statements {
+                        collect_from_statement(inner, ctx, out);
                     }
-                    Declaration::ClassDeclaration(c) => {
-                        try_hash_class(c, ctx, out);
-                    }
-                    Declaration::VariableDeclaration(v) => {
-                        for vd in &v.declarations {
-                            if let Some(init) = &vd.init {
-                                collect_from_expression(init, ctx, out);
-                            }
-                        }
-                    }
-                    _ => {}
                 }
             }
-        }
+            Declaration::ClassDeclaration(c) => {
+                try_hash_class(c, ctx, out);
+            }
+            Declaration::VariableDeclaration(v) => {
+                for vd in &v.declarations {
+                    if let Some(init) = &vd.init {
+                        collect_from_expression(init, ctx, out);
+                    }
+                }
+            }
+            _ => {}
+        },
         _ => {}
     }
 }
@@ -808,8 +804,12 @@ fn collect_from_expression(expr: &Expression, ctx: &HashContext, out: &mut Vec<R
         }
         Expression::ArrowFunctionExpression(f) => {
             try_hash_arrow(f, ctx, out);
-            for inner in &f.body.statements {
-                collect_from_statement(inner, ctx, out);
+            if let Some(body) = f.get_function_body() {
+                for inner in &body.statements {
+                    collect_from_statement(inner, ctx, out);
+                }
+            } else if let Some(expr) = f.get_expression() {
+                collect_from_expression(expr, ctx, out);
             }
         }
         Expression::ClassExpression(c) => {
@@ -975,11 +975,11 @@ fn try_hash_function(f: &Function, ctx: &HashContext, out: &mut Vec<RawFunctionI
 }
 
 fn try_hash_arrow(f: &ArrowFunctionExpression, ctx: &HashContext, out: &mut Vec<RawFunctionInfo>) {
-    if f.expression {
+    let Some(body) = f.get_function_body() else {
         return;
-    }
-    let stmt_count = f.body.statements.len() as u32;
-    let structural_units: u32 = f.body.statements.iter().map(count_statement_units).sum();
+    };
+    let stmt_count = body.statements.len() as u32;
+    let structural_units = count_function_body_units(body);
     if !meets_min_complexity(stmt_count, structural_units, ctx.min_stmts) {
         return;
     }
@@ -1053,7 +1053,7 @@ pub struct CheckFunctionInfo {
 pub fn analyze_for_check(source: &str, min_stmts: u32) -> Option<CheckAnalysis> {
     let allocator = Allocator::default();
     let parse_ret = parse_js(&allocator, source);
-    if parse_ret.panicked {
+    if parse_ret.fatal_error {
         return None;
     }
 

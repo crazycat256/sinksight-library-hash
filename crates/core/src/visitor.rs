@@ -325,7 +325,9 @@ impl<'a> TokenCollector<'a> {
             Statement::ImportDeclaration(d) => self.visit_import_declaration(d),
             Statement::ExportAllDeclaration(d) => self.visit_export_all_declaration(d),
             Statement::ExportDefaultDeclaration(d) => self.visit_export_default_declaration(d),
+            Statement::ExportDeclaration(d) => self.visit_export_declaration(d),
             Statement::ExportNamedDeclaration(d) => self.visit_export_named_declaration(d),
+            Statement::ExportFromDeclaration(d) => self.visit_export_from_declaration(d),
             _ => {}
         }
     }
@@ -530,11 +532,19 @@ impl<'a> TokenCollector<'a> {
     pub fn visit_arrow_function(&mut self, f: &ArrowFunctionExpression) {
         self.push("ArrowFunctionExpression");
         self.visit_formal_parameters(&f.params);
-        // Normalize both arrow body forms to emit just the expression:
-        //   (x) => expr             -> Arrow, [params], [expr]
-        //   (x) => { return expr; } -> Arrow, [params], [expr]
-        if f.body.directives.is_empty() && f.body.statements.len() == 1 {
-            match &f.body.statements[0] {
+        self.visit_arrow_body(&f.body);
+    }
+
+    fn visit_arrow_body(&mut self, body: &ArrowFunctionBody) {
+        if let Some(expr) = body.as_expression() {
+            self.visit_expression(expr);
+            return;
+        }
+        let Some(body) = body.as_function_body() else {
+            return;
+        };
+        if body.directives.is_empty() && body.statements.len() == 1 {
+            match &body.statements[0] {
                 Statement::ExpressionStatement(es) => {
                     self.visit_expression(&es.expression);
                     return;
@@ -550,30 +560,13 @@ impl<'a> TokenCollector<'a> {
                 _ => {}
             }
         }
-        self.visit_function_body(&f.body);
+        self.visit_function_body(body);
     }
 
     /// Hash entry-point for a standalone arrow function: omits the type token.
     pub fn visit_arrow_function_content(&mut self, f: &ArrowFunctionExpression) {
         self.visit_formal_parameters(&f.params);
-        if f.body.directives.is_empty() && f.body.statements.len() == 1 {
-            match &f.body.statements[0] {
-                Statement::ExpressionStatement(es) => {
-                    self.visit_expression(&es.expression);
-                    return;
-                }
-                Statement::ReturnStatement(ret) => {
-                    if let Some(arg) = &ret.argument {
-                        if !Self::is_void_zero(arg) && !Self::is_undefined_ident(arg) {
-                            self.visit_expression(arg);
-                            return;
-                        }
-                    }
-                }
-                _ => {}
-            }
-        }
-        self.visit_function_body(&f.body);
+        self.visit_arrow_body(&f.body);
     }
 
     fn visit_formal_parameters(&mut self, params: &FormalParameters) {
@@ -616,8 +609,8 @@ impl<'a> TokenCollector<'a> {
         if let Some(id) = &c.id {
             self.emit_binding_ident(id);
         }
-        if let Some(super_class) = &c.super_class {
-            self.visit_expression(super_class);
+        if let Some(heritage) = &c.heritage {
+            self.visit_expression(&heritage.expression);
         }
         self.visit_class_body(&c.body);
     }
@@ -627,8 +620,8 @@ impl<'a> TokenCollector<'a> {
         for dec in &c.decorators {
             self.visit_decorator(dec);
         }
-        if let Some(super_class) = &c.super_class {
-            self.visit_expression(super_class);
+        if let Some(heritage) = &c.heritage {
+            self.visit_expression(&heritage.expression);
         }
         self.visit_class_body(&c.body);
     }
@@ -744,12 +737,19 @@ impl<'a> TokenCollector<'a> {
                 self.emit_identifier_ref(ident);
             }
 
-            Expression::MetaProperty(m) => {
+            Expression::ImportMeta(_) => {
                 self.push("MetaProperty");
                 self.push("Identifier");
-                self.push(&m.meta.name);
+                self.push("import");
                 self.push("Identifier");
-                self.push(&m.property.name);
+                self.push("meta");
+            }
+            Expression::NewTarget(_) => {
+                self.push("MetaProperty");
+                self.push("Identifier");
+                self.push("new");
+                self.push("Identifier");
+                self.push("target");
             }
             Expression::Super(_) => {
                 self.push("Super");
@@ -1250,27 +1250,34 @@ impl<'a> TokenCollector<'a> {
         self.push_prefixed("S:", &d.source.value);
     }
 
+    fn visit_export_declaration(&mut self, d: &ExportDeclaration) {
+        self.push("ExportNamedDeclaration");
+        match &d.declaration {
+            Declaration::VariableDeclaration(v) => self.visit_variable_declaration(v),
+            Declaration::FunctionDeclaration(f) => self.visit_function(f, "FunctionDeclaration"),
+            Declaration::ClassDeclaration(c) => self.visit_class(c, "ClassDeclaration"),
+            _ => {}
+        }
+    }
+
     fn visit_export_named_declaration(&mut self, d: &ExportNamedDeclaration) {
         self.push("ExportNamedDeclaration");
-        if let Some(decl) = &d.declaration {
-            match decl {
-                Declaration::VariableDeclaration(v) => self.visit_variable_declaration(v),
-                Declaration::FunctionDeclaration(f) => {
-                    self.visit_function(f, "FunctionDeclaration")
-                }
-                Declaration::ClassDeclaration(c) => self.visit_class(c, "ClassDeclaration"),
-                _ => {}
-            }
-        }
         for spec in &d.specifiers {
             self.push("ExportSpecifier");
             self.visit_module_export_name(&spec.local);
             self.visit_module_export_name(&spec.exported);
         }
-        if let Some(source) = &d.source {
-            self.push("StringLiteral");
-            self.push_prefixed("S:", &source.value);
+    }
+
+    fn visit_export_from_declaration(&mut self, d: &ExportFromDeclaration) {
+        self.push("ExportNamedDeclaration");
+        for spec in &d.specifiers {
+            self.push("ExportSpecifier");
+            self.visit_module_export_name(&spec.local);
+            self.visit_module_export_name(&spec.exported);
         }
+        self.push("StringLiteral");
+        self.push_prefixed("S:", &d.source.value);
     }
 
     fn visit_export_default_declaration(&mut self, d: &ExportDefaultDeclaration) {
