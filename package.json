@@ -1,0 +1,18 @@
+{
+  "name": "@sinksight/library-hash",
+  "description": "WebAssembly bindings for sinksight-library-hash.",
+  "version": "0.1.3",
+  "license": "SEE LICENSE IN ../../LICENSE",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/crazycat256/sinksight-library-hash"
+  },
+  "files": [
+    "sinksight_library_hash_bg.wasm",
+    "sinksight_library_hash.js",
+    "sinksight_library_hash.d.ts"
+  ],
+  "main": "sinksight_library_hash.js",
+  "homepage": "https://github.com/crazycat256/sinksight-library-hash",
+  "types": "sinksight_library_hash.d.ts"
+}
